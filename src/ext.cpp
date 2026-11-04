@@ -42,7 +42,7 @@
 #include <string>
 #include <vector>
 
-// All five public headers share the FF_LIB_BOUND_SPLINE_T guard, so they
+// The public headers share the FF_LIB_BOUND_SPLINE_T guard, so they
 // co-include cleanly and provide the correctly-namespaced ff:: declarations.
 #include "fastfields/api/distance.h"   // ff::dt_euclidean / dt_l1 / dt_spline_* / dt_mesh
 #include "fastfields/api/posdef.h"     // ff::sym_matvec / sym_solve / sym_invert / ...
@@ -52,6 +52,7 @@
 #include "fastfields/api/pushpull.h"   // ff::pull / push / count / grad
 #include "fastfields/api/reg_field.h"  // ff::field_matvec / field_diag
 #include "fastfields/api/reg_flow.h"   // ff::flow_matvec / flow_diag
+#include "fastfields/api/solve_field.h"  // ff::field_cg
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -683,6 +684,122 @@ NB_MODULE(_core, m) {
         "Materialise the Toeplitz convolution kernel of the field "
         "regulariser.");
 
+    // --- the regularised system: forward, preconditioner, CG solver ---
+    //
+    // These three take the per-voxel compact-symmetric data-term Hessian `H`
+    // alongside the regulariser `L`, and are the operators an outer
+    // optimisation loop needs: `field_forward` applies (H + L), `field_precond`
+    // approximates its inverse by the Jacobi diagonal (H + diag(L))^-1, and
+    // `field_relax` / `field_cg` solve the system. Each is a single kernel; a
+    // Python-side composition of field_matvec/field_diag + sym_matvec/sym_solve
+    // computes the same thing but allocates a full-size temporary for the
+    // regulariser result and walks the field twice.
+    m.def(
+        "field_forward",
+        [](arr out, arr hes, arr inp,
+           std::optional<std::vector<double>> voxel_size,
+           std::optional<std::vector<double>> absolute,
+           std::optional<std::vector<double>> membrane,
+           std::optional<std::vector<double>> bending, int8_t bound, int ndim,
+           intptr_t stream) {
+            Args A("field_forward");
+            DLTensor o = A(out, "out"), h = A(hes, "hes"), i = A(inp, "inp");
+            ff::field_forward(o, h, i, vec_ptr(voxel_size), vec_ptr(absolute),
+                              vec_ptr(membrane), vec_ptr(bending), bound, ndim,
+                              stream);
+        },
+        "out"_a, "hes"_a, "inp"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a.none() = nb::none(), "membrane"_a.none() = nb::none(),
+        "bending"_a.none() = nb::none(), "bound"_a = 3, "ndim"_a = 1,
+        "stream"_a = 0,
+        "out = (H + L) @ inp for a multi-channel field: the forward "
+        "application of the regularised system field_relax/field_cg solve. "
+        "hes is the compact-symmetric per-voxel Hessian "
+        "(*batch,*spatial,C*(C+1)/2); out and inp are (*batch,*spatial,C).");
+
+    m.def(
+        "field_precond",
+        [](arr out, arr hes, arr grd,
+           std::optional<std::vector<double>> voxel_size,
+           std::optional<std::vector<double>> absolute,
+           std::optional<std::vector<double>> membrane,
+           std::optional<std::vector<double>> bending, int8_t bound, int ndim,
+           intptr_t stream) {
+            Args A("field_precond");
+            DLTensor o = A(out, "out"), h = A(hes, "hes"), g = A(grd, "grd");
+            ff::field_precond(o, h, g, vec_ptr(voxel_size), vec_ptr(absolute),
+                              vec_ptr(membrane), vec_ptr(bending), bound, ndim,
+                              stream);
+        },
+        "out"_a, "hes"_a, "grd"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a.none() = nb::none(), "membrane"_a.none() = nb::none(),
+        "bending"_a.none() = nb::none(), "bound"_a = 3, "ndim"_a = 1,
+        "stream"_a = 0,
+        "out = (H + diag(L)) \\ grd: the Jacobi preconditioner of the "
+        "regularised field system. hes is the compact-symmetric per-voxel "
+        "Hessian; out and grd are (*batch,*spatial,C).");
+
+    m.def(
+        "field_precond_",
+        [](arr sol, arr hes, std::optional<std::vector<double>> voxel_size,
+           std::optional<std::vector<double>> absolute,
+           std::optional<std::vector<double>> membrane,
+           std::optional<std::vector<double>> bending, int8_t bound, int ndim,
+           intptr_t stream) {
+            Args A("field_precond_");
+            DLTensor s = A(sol, "sol"), h = A(hes, "hes");
+            ff::field_precond_(s, h, vec_ptr(voxel_size), vec_ptr(absolute),
+                               vec_ptr(membrane), vec_ptr(bending), bound, ndim,
+                               stream);
+        },
+        "sol"_a, "hes"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a.none() = nb::none(), "membrane"_a.none() = nb::none(),
+        "bending"_a.none() = nb::none(), "bound"_a = 3, "ndim"_a = 1,
+        "stream"_a = 0,
+        "In-place field_precond: sol holds grd on entry and "
+        "(H + diag(L)) \\ grd on exit.");
+
+    // ----- solve_field.h -----
+    //
+    // CPU ONLY. The hub has no FF_CUDA::field_cg to forward to -- the solver's
+    // dot products need a device-side reduction the cuda backend does not
+    // expose yet (fastfields-lib#34) -- so a CUDA tensor raises ValueError
+    // from the hub rather than silently running on the host. Check
+    // `fastfields.dlpack.backend` if you need to branch before the call.
+    //
+    // Unlike every other binding here this one *returns* something: the two
+    // `int*`/`double*` out-parameters of ff::field_cg (iterations run, final
+    // relative residual) are convergence diagnostics about the call rather
+    // than field data, so they come back as a Python tuple instead of as
+    // caller-allocated 0-d arrays. The arrays themselves stay caller-allocated
+    // as everywhere else.
+    m.def(
+        "field_cg",
+        [](arr sol, arr hes, arr grd,
+           std::optional<std::vector<double>> voxel_size,
+           std::optional<std::vector<double>> absolute,
+           std::optional<std::vector<double>> membrane,
+           std::optional<std::vector<double>> bending, int8_t bound, int ndim,
+           int nb_iter, double tol, intptr_t stream) {
+            Args A("field_cg");
+            DLTensor s = A(sol, "sol"), h = A(hes, "hes"), g = A(grd, "grd");
+            int nb_iter_out = 0;
+            double residual_out = 0.0;
+            ff::field_cg(s, h, g, vec_ptr(voxel_size), vec_ptr(absolute),
+                         vec_ptr(membrane), vec_ptr(bending), bound, ndim,
+                         nb_iter, tol, &nb_iter_out, &residual_out, stream);
+            return nb::make_tuple(nb_iter_out, residual_out);
+        },
+        "sol"_a, "hes"_a, "grd"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a.none() = nb::none(), "membrane"_a.none() = nb::none(),
+        "bending"_a.none() = nb::none(), "bound"_a = 3, "ndim"_a = 1,
+        "nb_iter"_a = 32, "tol"_a = 1e-8, "stream"_a = 0,
+        "Solve (H + L) x = g by Jacobi-preconditioned conjugate gradients, "
+        "in place: `sol` is the warm start on entry (pass zeros for a cold "
+        "start) and the solution on exit. Returns (iterations_run, "
+        "final_relative_residual). CPU ONLY -- a CUDA tensor raises "
+        "ValueError (fastfields-lib#34).");
+
     // --- RLS/JRLS (weighted) variants ---
     // `wgt` selects the mode via its trailing dimension: 1 (one weight shared
     // -- "joint" -- across all channels, JRLS) or C (genuine per-channel
@@ -938,6 +1055,65 @@ NB_MODULE(_core, m) {
         "membrane"_a = 0.0, "bending"_a = 0.0, "shears"_a = 0.0, "div"_a = 0.0,
         "bound"_a = 3, "ndim"_a = 1, "stream"_a = 0,
         "Materialise the Toeplitz convolution kernel of the flow regulariser.");
+
+    // --- the regularised system: forward and preconditioner ---
+    // Same role as field_forward / field_precond, for the vector flow field.
+    // There is no flow_cg: the hub ships a CG driver for the field family
+    // only (api/solve_field.h).
+    m.def(
+        "flow_forward",
+        [](arr out, arr hes, arr inp,
+           std::optional<std::vector<double>> voxel_size, double absolute,
+           double membrane, double bending, double shears, double div,
+           int8_t bound, int ndim, intptr_t stream) {
+            Args A("flow_forward");
+            DLTensor o = A(out, "out"), h = A(hes, "hes"), i = A(inp, "inp");
+            ff::flow_forward(o, h, i, vec_ptr(voxel_size), absolute, membrane,
+                             bending, shears, div, bound, ndim, stream);
+        },
+        "out"_a, "hes"_a, "inp"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a = 0.0, "membrane"_a = 0.0, "bending"_a = 0.0,
+        "shears"_a = 0.0, "div"_a = 0.0, "bound"_a = 3, "ndim"_a = 1,
+        "stream"_a = 0,
+        "out = (H + L) @ inp for the flow field: the forward application of "
+        "the regularised system flow_relax solves. hes is the symmetric "
+        "per-voxel Hessian (*batch,*spatial,ndim*(ndim+1)/2); out and inp are "
+        "(*batch,*spatial,ndim).");
+
+    m.def(
+        "flow_precond",
+        [](arr out, arr hes, arr grd,
+           std::optional<std::vector<double>> voxel_size, double absolute,
+           double membrane, double bending, double shears, double div,
+           int8_t bound, int ndim, intptr_t stream) {
+            Args A("flow_precond");
+            DLTensor o = A(out, "out"), h = A(hes, "hes"), g = A(grd, "grd");
+            ff::flow_precond(o, h, g, vec_ptr(voxel_size), absolute, membrane,
+                             bending, shears, div, bound, ndim, stream);
+        },
+        "out"_a, "hes"_a, "grd"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a = 0.0, "membrane"_a = 0.0, "bending"_a = 0.0,
+        "shears"_a = 0.0, "div"_a = 0.0, "bound"_a = 3, "ndim"_a = 1,
+        "stream"_a = 0,
+        "out = (H + diag(L)) \\ grd: the Jacobi preconditioner of the "
+        "regularised flow system.");
+
+    m.def(
+        "flow_precond_",
+        [](arr sol, arr hes, std::optional<std::vector<double>> voxel_size,
+           double absolute, double membrane, double bending, double shears,
+           double div, int8_t bound, int ndim, intptr_t stream) {
+            Args A("flow_precond_");
+            DLTensor s = A(sol, "sol"), h = A(hes, "hes");
+            ff::flow_precond_(s, h, vec_ptr(voxel_size), absolute, membrane,
+                              bending, shears, div, bound, ndim, stream);
+        },
+        "sol"_a, "hes"_a, "voxel_size"_a.none() = nb::none(),
+        "absolute"_a = 0.0, "membrane"_a = 0.0, "bending"_a = 0.0,
+        "shears"_a = 0.0, "div"_a = 0.0, "bound"_a = 3, "ndim"_a = 1,
+        "stream"_a = 0,
+        "In-place flow_precond: sol holds grd on entry and "
+        "(H + diag(L)) \\ grd on exit.");
 
     // --- RLS/JRLS (weighted) variants ---
     // Unlike the field family, the flow weight map is always *joint*: the

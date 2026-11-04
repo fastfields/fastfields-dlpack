@@ -516,6 +516,31 @@ _STREAM_CASES = {
     "field_addkernel_": lambda s: ff.field_addkernel_(
         _f(1, 1, _C), stream=s, **_field_kw()
     ),
+    "field_forward": lambda s: ff.field_forward(
+        _f(*_SPATIAL, _C),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        _f(*_SPATIAL, _C),
+        stream=s,
+        **_field_kw(),
+    ),
+    "field_precond": lambda s: ff.field_precond(
+        _f(*_SPATIAL, _C),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        _f(*_SPATIAL, _C),
+        stream=s,
+        **_field_kw(),
+    ),
+    "field_precond_": lambda s: ff.field_precond_(
+        _f(*_SPATIAL, _C), _f(*_SPATIAL, _PACKED) + 1.0, stream=s,
+        **_field_kw(),
+    ),
+    "field_cg": lambda s: ff.field_cg(
+        _f(*_SPATIAL, _C),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        _f(*_SPATIAL, _C),
+        stream=s,
+        **_field_kw(),
+    ),
     "field_subkernel_": lambda s: ff.field_subkernel_(
         _f(1, 1, _C), stream=s, **_field_kw()
     ),
@@ -567,6 +592,24 @@ _STREAM_CASES = {
     ),
     "flow_addkernel_": lambda s: ff.flow_addkernel_(
         _f(1, 1, _NDIM), stream=s, **_flow_kw()
+    ),
+    "flow_forward": lambda s: ff.flow_forward(
+        _f(*_SPATIAL, _NDIM),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        _f(*_SPATIAL, _NDIM),
+        stream=s,
+        **_flow_kw(),
+    ),
+    "flow_precond": lambda s: ff.flow_precond(
+        _f(*_SPATIAL, _NDIM),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        _f(*_SPATIAL, _NDIM),
+        stream=s,
+        **_flow_kw(),
+    ),
+    "flow_precond_": lambda s: ff.flow_precond_(
+        _f(*_SPATIAL, _NDIM), _f(*_SPATIAL, _PACKED) + 1.0, stream=s,
+        **_flow_kw(),
     ),
     "flow_subkernel_": lambda s: ff.flow_subkernel_(
         _f(1, 1, _NDIM), stream=s, **_flow_kw()

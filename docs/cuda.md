@@ -5,6 +5,13 @@ the device of the arrays you pass and dispatches to the matching backend. Two
 things behave differently on CUDA, and both are contracts you have to keep --
 this page is the statement of record for them.
 
+One operation is not available on CUDA at all: `field_cg` raises `ValueError`
+for CUDA arrays rather than quietly running on the host, because the hub has no
+CUDA implementation of the solver's dot-product reductions yet
+(fastfields-lib#34). Everything else in the module runs on either device.
+`backend` tells you which build you have installed -- `"cpu"`, `"cu128"`, ...
+or `None` if the version carries no label.
+
 ## Streams
 
 Every binding takes a trailing `stream` argument: a CUDA stream handle as an

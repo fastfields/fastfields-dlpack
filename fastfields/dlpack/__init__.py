@@ -15,6 +15,14 @@ dtype *contracts* (matching ranks, matching batch shapes, ``ndim`` vs. rank)
 are enforced one layer down, by ``fastfields-lib``, and also surface as
 ``ValueError``.
 
+Device coverage
+---------------
+Every op here runs on CPU and, when this package was built with CUDA
+(``backend`` starting with ``"cu"``), on CUDA -- with one exception:
+``field_cg`` is CPU-only, and raises ``ValueError`` for CUDA arrays rather
+than falling back to the host (fastfields-lib#34). ``backend`` tells you which
+build you have: ``"cpu"``, ``"cu128"``, ... or ``None`` if unknown.
+
 CUDA lifetime invariant
 -----------------------
 **Every array passed to a CUDA op must be kept alive by the caller until the
@@ -213,6 +221,37 @@ flow_matvec_rls = _core.flow_matvec_rls
 flow_diag_rls = _core.flow_diag_rls
 flow_relax_rls = _core.flow_relax_rls
 
+# The regularised system (H + L), where H is the per-voxel data-term Hessian:
+# `*_forward` applies it, `*_precond[_]` applies the Jacobi approximation of
+# its inverse, and `*_relax` / `field_cg` solve it. Each is one kernel -- a
+# Python-side composition out of `*_matvec`/`*_diag` and `sym_matvec`/
+# `sym_solve` computes the same values but allocates a full-size temporary for
+# the regulariser result and traverses the field twice.
+field_forward = _core.field_forward
+field_precond = _core.field_precond
+field_precond_ = _core.field_precond_
+flow_forward = _core.flow_forward
+flow_precond = _core.flow_precond
+flow_precond_ = _core.flow_precond_
+
+#: Conjugate-gradient solver for ``(H + L) x = g`` on a multi-channel field.
+#:
+#: **CPU only.** The hub has no CUDA implementation to forward to -- the
+#: solver's dot products need a device-side reduction the CUDA backend does not
+#: expose yet (fastfields-lib#34) -- so passing CUDA arrays raises
+#: ``ValueError`` from C++ instead of silently running on the host. This is the
+#: one op in this module that is not available on every device
+#: ``fastfields.dlpack`` was built for; branch on ``backend`` (``"cpu"`` /
+#: ``"cu128"`` / ``None``) if you need to pick a solver up front, or on the
+#: array's device.
+#:
+#: It is also the one op that returns a value: ``(iterations_run,
+#: final_relative_residual)``. Those are diagnostics about the call, not field
+#: data, so they come back as a tuple rather than through caller-allocated
+#: output arrays; ``sol`` is still written in place like every other output
+#: here.
+field_cg = _core.field_cg
+
 # In-place-only accumulate primitives (jitfields op '+' / '-'). These
 # read-modify-write the caller's `out`; the trailing underscore marks that, as
 # for sym_addmatvec_ / sym_submatvec_. There is no out-of-place counterpart at
@@ -287,4 +326,12 @@ __all__ = [
     "flow_subdiag_",
     "flow_addkernel_",
     "flow_subkernel_",
+    # regularised system (H + L): forward / preconditioner / solver
+    "field_forward",
+    "field_precond",
+    "field_precond_",
+    "flow_forward",
+    "flow_precond",
+    "flow_precond_",
+    "field_cg",
 ]
