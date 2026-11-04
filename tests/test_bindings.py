@@ -531,7 +531,9 @@ _STREAM_CASES = {
         **_field_kw(),
     ),
     "field_precond_": lambda s: ff.field_precond_(
-        _f(*_SPATIAL, _C), _f(*_SPATIAL, _PACKED) + 1.0, stream=s,
+        _f(*_SPATIAL, _C),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        stream=s,
         **_field_kw(),
     ),
     "field_cg": lambda s: ff.field_cg(
@@ -608,7 +610,9 @@ _STREAM_CASES = {
         **_flow_kw(),
     ),
     "flow_precond_": lambda s: ff.flow_precond_(
-        _f(*_SPATIAL, _NDIM), _f(*_SPATIAL, _PACKED) + 1.0, stream=s,
+        _f(*_SPATIAL, _NDIM),
+        _f(*_SPATIAL, _PACKED) + 1.0,
+        stream=s,
         **_flow_kw(),
     ),
     "flow_subkernel_": lambda s: ff.flow_subkernel_(

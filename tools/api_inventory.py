@@ -295,9 +295,14 @@ def build(lib_dir: str, src_root: str | None) -> dict:
                 hit = reachable(names, api)[op]
                 row["layers"][layer] = sorted(hit)
         rows.append(row)
-    return {"lib_dir": lib_dir, "api_size": len(api), "rows": rows,
-            "layers": {k: (None if v is None else len(v))
-                       for k, v in layers.items()}}
+    return {
+        "lib_dir": lib_dir,
+        "api_size": len(api),
+        "rows": rows,
+        "layers": {
+            k: (None if v is None else len(v)) for k, v in layers.items()
+        },
+    }
 
 
 def gaps(report: dict) -> list[tuple[str, str]]:
@@ -334,7 +339,7 @@ def print_table(report: dict) -> None:
             elif hit:
                 cells.append("yes")
             elif (layer, row["op"]) in EXPECTED_GAPS:
-                cells.append("--")       # documented, deliberate
+                cells.append("--")  # documented, deliberate
             else:
                 cells.append("MISSING")
         print(row["op"].ljust(width) + "".join(c.ljust(8) for c in cells))
@@ -349,8 +354,7 @@ def print_table(report: dict) -> None:
         exp = sum(
             1
             for r in rows
-            if not r["layers"][layer]
-            and (layer, r["op"]) in EXPECTED_GAPS
+            if not r["layers"][layer] and (layer, r["op"]) in EXPECTED_GAPS
         )
         bad = len(rows) - yes - exp
         print(
