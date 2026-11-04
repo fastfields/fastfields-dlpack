@@ -38,9 +38,38 @@ ff.dt_euclidean(x)          # in-place squared Euclidean distance transform
 The same operation families as the higher-level packages, in their raw in-place
 form: distance transforms (`dt_euclidean`, `dt_l1`, the `dt_spline_*` and
 `dt_mesh` point distances), positive-definite linear algebra (`sym_matvec`,
-`sym_addmatvec_`, `sym_solve`, `sym_invert`, …), and resampling (`resample`,
-`restriction`, `spline_coeff`). The `Spline` and `Bound` enums document the
-integer order/boundary arguments.
+`sym_addmatvec_`, `sym_solve`, `sym_invert`, …), resampling (`resample`,
+`restriction`, `spline_coeff`), spline gather/scatter (`pull`, `push`, `count`,
+`grad` and their adjoints) and the spatial regularisers (`field_*` for a
+multi-channel field, `flow_*` for a vector flow). The `Spline` and `Bound`
+enums document the integer order/boundary arguments.
+
+Every public entry point of the C++ hub is bound — all 58 of them, checked by
+`tests/test_api_coverage.py`. `tools/api_inventory.py` prints the whole
+hub → binding → wrapper matrix if you want to see which layer exposes what:
+
+```sh
+python tools/api_inventory.py              # table
+python tools/api_inventory.py --check      # non-zero on an undocumented gap
+```
+
+### Solving the regularised system
+
+The regulariser families each come with the operators an outer optimisation
+loop needs on `(H + L)`, where `H` is the per-voxel data-term Hessian in
+compact-symmetric packing and `L` the regulariser:
+
+| call | what it does |
+| --- | --- |
+| `field_forward` / `flow_forward` | apply `(H + L) x` |
+| `field_precond` / `flow_precond` | apply `(H + diag(L))⁻¹ g` (Jacobi) |
+| `field_precond_` / `flow_precond_` | the same, in place |
+| `field_relax` / `flow_relax` | Gauss-Seidel sweeps on `(H + L) x = g` |
+| `field_cg` | preconditioned conjugate gradients on the same system |
+
+`field_cg` is the only operation here that is **CPU-only** (the CUDA backend
+has no device-side reduction for the solver's dot products yet) and the only
+one that returns a value: `(iterations_run, final_relative_residual)`.
 
 See the [API reference](api/index.md) for full signatures and options.
 
