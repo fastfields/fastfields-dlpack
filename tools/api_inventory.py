@@ -114,6 +114,26 @@ EXPECTED_GAPS: dict[tuple[str, str], str] = {
             "sym_matvec_backward",
         )
     },
+    # -- torch: solver entries that need an autograd decision first ----------
+    **{
+        ("torch", op): (
+            "in-place preconditioner solve; wrapping it means deciding how "
+            "autograd treats a mutated buffer (API_CONTRACT.md, 'In-place "
+            "policy'). The out-of-place *_precond is exposed."
+        )
+        for op in ("field_precond_", "flow_precond_")
+    },
+    ("torch", "field_cg"): (
+        "iterative solver whose gradient is a solve with the same operator "
+        "-- a real autograd.Function, not a mechanical wrapper. field_relax "
+        "is the in-place solver exposed today."
+    ),
+    # -- cupy: the op cannot run on a cupy array at all ----------------------
+    ("cupy", "field_cg"): (
+        "CPU-only in fastfields-lib (fastfields-lib#34): the hub rejects "
+        "CUDA tensors, so a cupy wrapper could only ever raise. field_relax "
+        "runs on CUDA and solves the same system."
+    ),
     # -- fastfields.auto: cannot dispatch without an array -------------------
     **{
         ("auto", op): (
