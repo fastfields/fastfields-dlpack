@@ -17,6 +17,16 @@
 #     fastfields-lib (FF_WITH_CUDA: the lib linking libfastfields-cuda, and
 #     setup.py bundling it), which is MIGRATION.md task T21. The wheel index
 #     already advertises those folders as "planned -- not yet published".
+#   * BLOCKED on a change to the shared workflow. `_fastfields_lib` is no
+#     longer a submodule (it is pinned by SHA in `fastfields-lib.sha` and
+#     fetched by setup.py), but `python-release.yml`'s `build-native` and
+#     `build-compiled` jobs still check out with `submodules: recursive` and
+#     `token: ${{ secrets.CI_SUBMODULE_TOKEN }}`. That PAT is stale, so both
+#     jobs die in `actions/checkout` on the main repo before any build step --
+#     the same failure that was turning Test and Docs red. Both inputs are now
+#     dead weight and need removing there; `secrets: inherit` below must stay,
+#     because the publish and wheel-index steps do need GITHUB_TOKEN and
+#     WHL_DISPATCH_TOKEN. Nothing in this repo can fix it.
 #   * Linux only. The C++ build uses clang-style Unix Makefiles that are not
 #     Windows-portable (fastfields-dlpack#8), and the macOS leg needs
 #     cross-arch work before an arm64 wheel can be trusted -- plain `make`
