@@ -26,10 +26,9 @@ hub
     Found by parsing the headers of the ``_fastfields_lib`` source tree --
     the commit pinned in ``fastfields-lib.sha`` and fetched at build time --
     or of ``--lib-dir``, so it tracks the pinned hub, not a remembered list.
-    Only
-    ``api/*.h`` is read: ``api/cpu/`` and ``api/cuda/`` are the per-backend
-    dtype-dispatch layers, not the device-dispatching hub surface, and
-    ``checks.h`` declares inline helpers rather than ops.
+    Only ``api/*.h`` is read: ``api/cpu/`` and ``api/cuda/`` are the
+    per-backend dtype-dispatch layers, not the device-dispatching hub
+    surface, and ``checks.h`` declares inline helpers rather than ops.
 dlpack
     Exported by ``fastfields.dlpack`` (its ``__all__``).
 numpy / cupy / torch
