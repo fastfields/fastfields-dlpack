@@ -208,7 +208,10 @@ def _fetch_pinned_tree(destination: str, pinned: str) -> None:
 
     The fetch lands in a sibling temporary directory and is moved into place
     only once it has succeeded, so an interrupted build never leaves a
-    half-populated tree that the next build would mistake for a checkout.
+    half-populated tree that the next build would mistake for a checkout. If
+    ``destination`` already exists without being a checkout -- a restored CI
+    cache of ``_fastfields_lib/build/`` is the case that matters -- the tree is
+    merged around it rather than replacing it.
     """
     staging = destination + ".fetching"
     shutil.rmtree(staging, ignore_errors=True)
@@ -241,8 +244,41 @@ def _fetch_pinned_tree(destination: str, pinned: str) -> None:
             f"fetched fastfields-lib is at {head!r}, not the pinned "
             f"{pinned!r} -- refusing to build against it"
         )
-    os.replace(staging, destination)
+    _move_into_place(staging, destination)
     print(f"[fastfields_bind] fastfields-lib {pinned[:12]} -> {destination}")
+
+
+def _move_into_place(staging: str, destination: str) -> None:
+    """Move the fetched tree to ``destination``, merging around what is there.
+
+    ``destination`` can already exist without being a checkout: the obvious
+    case is a CI cache of the expensive ``make`` output, restored to
+    ``_fastfields_lib/build/`` before anything has fetched the sources it was
+    built from. Merging keeps that usable. Nothing is ever overwritten -- a
+    name that already exists is an error, not a silent replacement.
+    """
+    if not os.path.exists(destination):
+        os.replace(staging, destination)
+        return
+    entries = sorted(os.listdir(staging))
+    clashes = [
+        e for e in entries if os.path.exists(os.path.join(destination, e))
+    ]
+    if clashes:
+        # Check every name before moving any, so a refusal leaves both the
+        # destination and the staging area exactly as they were.
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RuntimeError(
+            f"refusing to overwrite {clashes} in the existing "
+            f"{destination!r} while unpacking the pinned fastfields-lib. "
+            "Remove that directory (or point $FASTFIELDS_DIR at a real "
+            "checkout) and build again."
+        )
+    for entry in entries:
+        os.replace(
+            os.path.join(staging, entry), os.path.join(destination, entry)
+        )
+    os.rmdir(staging)
 
 
 def _fetch_failure_message(pinned: str, exc: BaseException) -> str:
@@ -324,17 +360,6 @@ class BuildExt(build_ext):
                 "<tree>/include/), or unset both to build against the commit "
                 f"pinned in {os.path.basename(PIN_FILE)}."
             )
-        if os.path.isdir(FASTFIELDS_DIR) and os.listdir(FASTFIELDS_DIR):
-            # Something is there but it is not a fastfields-lib checkout.
-            # Do not delete it; say so.
-            raise RuntimeError(
-                f"{FASTFIELDS_DIR!r} exists but has no include/ directory, so "
-                "it is not a usable fastfields-lib checkout. Remove it to let "
-                f"the build fetch the pinned commit {pinned[:12]}, or point "
-                "$FASTFIELDS_DIR at a real checkout."
-            )
-        if os.path.isdir(FASTFIELDS_DIR):
-            os.rmdir(FASTFIELDS_DIR)  # empty leftover (e.g. an old gitlink)
         _fetch_pinned_tree(FASTFIELDS_DIR, pinned)
 
     # -- step 1: build the C++ libraries if they are not there yet -----------

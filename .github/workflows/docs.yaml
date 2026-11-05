@@ -26,6 +26,22 @@ jobs:
         with:
           python-version: "3.x"
       - run: pip install -r docs/requirements.txt
+      # `pip install .` below fetches the pinned fastfields-lib and builds its
+      # C++ libraries; the fetch is ~1s but the build is ~9 minutes. That build
+      # is a pure function of the pinned commit and the compiler, so cache it
+      # keyed on exactly that -- hashFiles() over the pin file. (That hashes
+      # its comments too, so editing them discards the cache; over-
+      # invalidating is the safe direction.)
+      #
+      # Deliberately no `restore-keys`: a near-miss would restore libraries
+      # built from a *different* commit, and setup.py skips `make` whenever the
+      # libraries are already present, so a fuzzy hit would silently link the
+      # docs build against the wrong library. Only an exact hit may be used.
+      # setup.py merges the fetched sources around a restored build/ directory.
+      - uses: actions/cache@v4
+        with:
+          path: _fastfields_lib/build
+          key: ff-lib-build-${{ runner.os }}-${{ hashFiles('fastfields-lib.sha') }}
       - run: pip install .
       - run: zensical build --clean
       - uses: actions/upload-pages-artifact@v4
