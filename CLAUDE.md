@@ -9,9 +9,14 @@ wrapper (numpy/cupy/torch/auto) sits on.
 fastfields-helpers (independent sibling, no dependency either way)
 ```
 
-- Submodule `_fastfields_lib -> fastfields-lib` (symlink in dev; real submodule
-  in a release checkout, pinned to branch
-  `claude/jitfields-fastfields-migration-v5r416`).
+- The `fastfields-lib` C++ tree is **pinned by commit SHA in
+  `fastfields-lib.sha`**, which `setup.py` fetches into `./_fastfields_lib` at
+  build time. It used to be a git submodule; it is not any more, because git
+  does not put submodule contents in an sdist, so `pip install` from a source
+  distribution could never build. A full 40-char SHA only -- a tag can be
+  moved. `FASTFIELDS_DIR` (or a pre-existing `./_fastfields_lib`) overrides the
+  fetch and is used untouched, so a C++ working tree is never reset by a
+  build.
 - Distribution name `fastfields-dlpack`; imports as **`fastfields.dlpack`**.
 
 ## Philosophy / role
@@ -43,8 +48,10 @@ fastfields-helpers (independent sibling, no dependency either way)
 pip install .                     # regular install (NOT editable — see caveat)
 python -m pytest tests/ -q        # import from a neutral cwd
 ```
-`setup.py` builds `libfastfields.so` + `libfastfields-cpu.so` via the
-`_fastfields_lib` Makefile **if missing**, copies them into
+`setup.py` fetches the pinned C++ tree if `./_fastfields_lib` is absent, then
+builds `libfastfields.so` + `libfastfields-cpu.so` via its Makefile **if
+missing** (bare `make`, relying on that Makefile's `.DEFAULT_GOAL := all`),
+copies them into
 `fastfields/dlpack/lib/`, and compiles the nanobind extension against them with
 an `$ORIGIN/lib` rpath. It respects `CXX` (default `clang++`); the extension is
 built `-std=c++17` even though the C++ libs are C++11.

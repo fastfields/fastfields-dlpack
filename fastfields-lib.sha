@@ -1,0 +1,27 @@
+# The pinned revision of the fastfields-lib C++/CUDA source tree that this
+# extension is built against.
+#
+# setup.py reads the SHA below and fetches exactly that commit from
+# https://github.com/fastfields/fastfields-lib into ./_fastfields_lib at build
+# time (see `_ensure_source_tree` there). This replaced a git submodule: git
+# does not carry submodules in an sdist, so `pip install` from a source
+# distribution had no C++ tree and could not build at all. A recorded SHA plus
+# a build-time fetch can be shipped in an sdist; a submodule structurally
+# cannot.
+#
+# ALWAYS A FULL 40-CHARACTER SHA -- never a tag or a branch. A tag can be
+# moved, and then a "pinned" build silently compiles something else.
+#
+# To bump it:
+#   1. pick the new commit on https://github.com/fastfields/fastfields-lib
+#      (`main`, or whatever branch the change landed on, so long as the commit
+#      stays reachable -- an unreachable commit cannot be fetched);
+#   2. replace the SHA below with its full 40 characters;
+#   3. rm -rf _fastfields_lib && pip install . && python -m pytest tests/ -q
+#      from a neutral cwd. src/ext.cpp compiles against the headers under
+#      <tree>/include/, so an incompatible C++ API change shows up as a
+#      compile error rather than at runtime.
+#
+# To build against a local working tree instead of this pin, point
+# FASTFIELDS_DIR at it; setup.py then never fetches and never touches it.
+9256d570318a935d34d925b84f326ece509d9284

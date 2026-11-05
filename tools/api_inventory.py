@@ -23,8 +23,10 @@ What each column means
 ----------------------
 hub
     A public entry point declared in the hub's ``include/fastfields/api/*.h``.
-    Found by parsing the headers of the ``_fastfields_lib`` submodule (or
-    ``--lib-dir``), so it tracks the pinned hub, not a remembered list. Only
+    Found by parsing the headers of the ``_fastfields_lib`` source tree --
+    the commit pinned in ``fastfields-lib.sha`` and fetched at build time --
+    or of ``--lib-dir``, so it tracks the pinned hub, not a remembered list.
+    Only
     ``api/*.h`` is read: ``api/cpu/`` and ``api/cuda/`` are the per-backend
     dtype-dispatch layers, not the device-dispatching hub surface, and
     ``checks.h`` declares inline helpers rather than ops.
@@ -181,8 +183,9 @@ def hub_api(lib_dir: str) -> dict[str, str]:
     headers = sorted(glob.glob(pattern))
     if not headers:
         raise SystemExit(
-            f"no hub headers under {pattern!r}: initialise the "
-            "_fastfields_lib submodule, or pass --lib-dir"
+            f"no hub headers under {pattern!r}: build the package once "
+            "to fetch the pinned fastfields-lib into _fastfields_lib, or "
+            "pass --lib-dir"
         )
     api: dict[str, str] = {}
     for path in headers:
@@ -367,9 +370,10 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument(
         "--lib-dir",
-        default=os.path.join(REPO, "_fastfields_lib"),
-        help="fastfields-lib source tree (default: the _fastfields_lib "
-        "submodule of this repo)",
+        default=os.environ.get("FASTFIELDS_DIR")
+        or os.path.join(REPO, "_fastfields_lib"),
+        help="fastfields-lib source tree (default: $FASTFIELDS_DIR, else "
+        "the ./_fastfields_lib checkout of the pinned commit)",
     )
     p.add_argument(
         "--src-root",

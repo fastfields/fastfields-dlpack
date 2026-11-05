@@ -3,3 +3,8 @@
 # Without this it would be missing from the sdist and any sdist -> wheel build
 # would fail to resolve the custom tag2version/format hooks.
 include _versioning.py
+
+# The pinned fastfields-lib commit. setup.py reads this at build time to fetch
+# the C++ source tree, so an sdist without it cannot build -- which is the
+# whole point of replacing the git submodule (sdists do not carry submodules).
+include fastfields-lib.sha

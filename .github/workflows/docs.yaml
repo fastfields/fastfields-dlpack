@@ -19,10 +19,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/configure-pages@v5
+      # No submodules and no token: the fastfields-lib C++ tree is pinned by
+      # SHA in fastfields-lib.sha and fetched by `pip install .` below.
       - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-          token: ${{ secrets.CI_SUBMODULE_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
