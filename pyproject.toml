@@ -48,7 +48,10 @@ packages = ["fastfields.dlpack"]
 
 [tool.ruff]
 line-length = 79
-extend-exclude = ["docs/examples"]
+# `_fastfields_lib` is the fetched C++ source tree, not our code: it appears in
+# the working tree as soon as the package is built once, and it has Python of
+# its own under tools/ that follows its own conventions.
+extend-exclude = ["docs/examples", "_fastfields_lib"]
 
 [tool.ruff.format]
 quote-style = "preserve"
@@ -100,4 +103,7 @@ omit = ["*/_version.py"]
 
 [tool.codespell]
 check-filenames = true
-skip = ".git,*.egg-info,build,dist,*.pdf,*.svg,docs/examples"
+# `_fastfields_lib` is skipped for the same reason ruff excludes it: it is the
+# fetched fastfields-lib tree, spelled upstream and checked by its own CI
+# (which has its own .codespellrc, including the vendored dlpack.h exemption).
+skip = ".git,*.egg-info,build,dist,*.pdf,*.svg,docs/examples,_fastfields_lib"
