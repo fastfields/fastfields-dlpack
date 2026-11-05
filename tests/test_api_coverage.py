@@ -13,13 +13,14 @@ while two wrappers advertised ``field_forward``/``field_precond`` and quietly
 recomputed them in Python out of ``*_matvec`` + ``sym_solve``.
 
 So this test re-derives the hub's public surface from the headers of the
-pinned ``_fastfields_lib`` submodule -- the same parse
-``tools/api_inventory.py`` does, imported from it so there is one
-implementation -- and asserts the binding exports all of it. A new hub entry
-point therefore turns red here rather than being discovered later.
+pinned fastfields-lib source tree -- ``$FASTFIELDS_DIR``, else the
+``_fastfields_lib`` checkout of the commit recorded in ``fastfields-lib.sha``
+-- using the same parse ``tools/api_inventory.py`` does, imported from it so
+there is one implementation, and asserts the binding exports all of it. A new
+hub entry point therefore turns red here rather than being discovered later.
 
-Skipped when the submodule is not checked out (a plain sdist install has the
-compiled extension but no C++ sources).
+Skipped when that tree is not present (a plain sdist install has the compiled
+extension but no C++ sources).
 """
 
 from __future__ import annotations
@@ -32,7 +33,9 @@ import pytest
 import fastfields.dlpack as ff
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LIB = os.path.join(_REPO, "_fastfields_lib")
+_LIB = os.environ.get("FASTFIELDS_DIR") or os.path.join(
+    _REPO, "_fastfields_lib"
+)
 
 sys.path.insert(0, os.path.join(_REPO, "tools"))
 

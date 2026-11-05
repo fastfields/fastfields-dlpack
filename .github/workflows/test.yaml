@@ -8,5 +8,19 @@ permissions:
   contents: read
 jobs:
   pytest:
+    # No `secrets: inherit`. It was here for exactly one reason -- to deliver
+    # CI_SUBMODULE_TOKEN to the shared workflow's checkout, which this repo
+    # was the only caller to need, for the `_fastfields_lib` submodule chain.
+    # There is no submodule any more: the C++ tree is pinned by SHA in
+    # fastfields-lib.sha and fetched by `pip install` from the public repo,
+    # with no credential.
+    #
+    # Dropping it also un-breaks the job. That PAT is stale, and the shared
+    # workflow passes it as the checkout token for this repo specifically, so
+    # every matrix leg was dying in actions/checkout -- on the *main repo*,
+    # before any Python ran -- with "fatal: could not read Username for
+    # 'https://github.com'". With the secret no longer inherited, the
+    # workflow's `repo == dlpack && secrets.CI_SUBMODULE_TOKEN || github.token`
+    # expression sees an empty (falsy) secret and falls back to github.token.
+    # python-test.yml requires no secrets of its own.
     uses: fastfields/.github/.github/workflows/python-test.yml@main
-    secrets: inherit

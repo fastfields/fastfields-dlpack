@@ -19,14 +19,40 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/configure-pages@v5
+      # No submodules and no token: the fastfields-lib C++ tree is pinned by
+      # SHA in fastfields-lib.sha and fetched by `pip install .` below. (The
+      # dead CI_SUBMODULE_TOKEN that used to be passed here was killing this
+      # job in actions/checkout, before any pip step ran.)
       - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-          token: ${{ secrets.CI_SUBMODULE_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
       - run: pip install -r docs/requirements.txt
+      # This job needs a real `pip install .`: the API reference is generated
+      # from the *built* extension (fastfields/dlpack/__init__.py is 57
+      # `name = _core.name` aliases and the docstrings live in src/ext.cpp), so
+      # without it the API page comes out with zero function entries.
+      #
+      # That install fetches the pinned fastfields-lib over the network -- the
+      # one network dependency in this build. If it ever fails here, setup.py
+      # prints the SHA it wanted, the URL, and the FASTFIELDS_DIR recipe for
+      # supplying the tree locally; read that message rather than the traceback.
+      #
+      # The fetch is ~1s, but the C++ build it triggers is ~9 minutes. That build
+      # is a pure function of the pinned commit and the compiler, so cache it
+      # keyed on exactly that -- hashFiles() over the pin file. (That hashes
+      # its comments too, so editing them discards the cache; over-
+      # invalidating is the safe direction.)
+      #
+      # Deliberately no `restore-keys`: a near-miss would restore libraries
+      # built from a *different* commit, and setup.py skips `make` whenever the
+      # libraries are already present, so a fuzzy hit would silently link the
+      # docs build against the wrong library. Only an exact hit may be used.
+      # setup.py merges the fetched sources around a restored build/ directory.
+      - uses: actions/cache@v4
+        with:
+          path: _fastfields_lib/build
+          key: ff-lib-build-${{ runner.os }}-${{ hashFiles('fastfields-lib.sha') }}
       - run: pip install .
       - run: zensical build --clean
       - uses: actions/upload-pages-artifact@v4

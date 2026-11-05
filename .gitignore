@@ -15,8 +15,13 @@ dist/
 # (The lib/ directory convention itself is documented and recreated by setup.py.)
 /fastfields/dlpack/lib/
 
-# fastfields-lib's own build tree (when ./_fastfields_lib is a checkout/submodule)
-/_fastfields_lib/build/
+# The fastfields-lib C++ source tree. Not tracked here (and no longer a
+# submodule): setup.py fetches the commit pinned in fastfields-lib.sha into
+# this path at build time, or a contributor points $FASTFIELDS_DIR at their own
+# checkout instead. Leaving it untracked-but-not-ignored would also make
+# versioningit read the working tree as dirty on every build.
+/_fastfields_lib/
+/_fastfields_lib.fetching/
 
 # versioningit-generated version file
 /fastfields/dlpack/_version.py

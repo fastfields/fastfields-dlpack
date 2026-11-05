@@ -1,4 +1,0 @@
-[submodule "_fastfields_lib"]
-	path = _fastfields_lib
-	url = https://github.com/fastfields/fastfields-lib.git
-	branch = main

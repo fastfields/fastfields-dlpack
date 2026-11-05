@@ -3,3 +3,15 @@
 # Without this it would be missing from the sdist and any sdist -> wheel build
 # would fail to resolve the custom tag2version/format hooks.
 include _versioning.py
+
+# The pinned fastfields-lib commit. setup.py reads this at build time to fetch
+# the C++ source tree, so an sdist without it cannot build -- which is the
+# whole point of replacing the git submodule (sdists do not carry submodules).
+include fastfields-lib.sha
+
+# The shipped native libraries are build artefacts: setup.py regenerates them
+# into this directory on every build, and `[tool.setuptools.package-data]`
+# sweeps lib/*.so into the *wheel*, which is where they belong. They must not
+# also land in the sdist -- an sdist built in a tree that has been built once
+# would otherwise carry a ~160 MB stale libfastfields-cpu.so.
+prune fastfields/dlpack/lib
