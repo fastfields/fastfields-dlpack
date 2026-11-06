@@ -54,8 +54,52 @@ inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://numpy.org/doc/stable/objects.inv",
 ]
-paths = ["."]
+# Where the handler looks for `fastfields.dlpack` -- and, just as much, where
+# it must NOT look. This package's Python surface is 58
+# `name = _core.name` aliases over a compiled extension, so the API page can
+# only be rendered from the *installed, built* package: `pip install .` in
+# .github/workflows/docs.yaml puts one in site-packages, and site-packages is
+# already on the handler's search path because it starts from `sys.path`.
+#
+# What this must avoid is the repo root. `fastfields` is a PEP 420 namespace
+# package, so with the repo root on the search path griffe sees TWO portions of
+# `fastfields.dlpack` -- the working tree's and site-packages' -- and treats it
+# as a namespace package. Namespace packages are never inspected, so every
+# function disappears and nothing warns: that is exactly how
+# fastfields.github.io/dlpack/api/ went live documenting one object. The
+# working tree is the wrong copy anyway; it has no built `_core` beside its
+# `__init__.py` (setup.py puts the extension in build/, not in place).
+#
+# `paths = ["."]` is what used to be here, and it is precisely the repo root.
+# It cannot simply be deleted: mkdocstrings falls back to the config file's
+# own directory when `paths` is empty, which is the same thing. So the list
+# names a directory that exists in every checkout and holds no Python --
+# anything without a `fastfields/` in it would do. tools/check-api-page.py
+# fails the build if this ever stops resolving.
+paths = ["docs"]
 [project.plugins.mkdocstrings.handlers.python.options]
+# Import `fastfields.dlpack` and introspect the real objects instead of
+# parsing its source. Required, not an optimisation: the docstrings and
+# signatures of all 58 functions live in src/ext.cpp and exist only in the
+# compiled `_core`. Read statically, the aliases come out as 66 undocumented
+# *attributes* -- which `show_if_no_docstring = false` below then drops -- so
+# the page renders the module and nothing else. Inspected, they come out as
+# documented functions and all 58 reach the page.
+#
+# This is what makes `pip install .` load-bearing for the docs build: with no
+# importable `fastfields.dlpack._core` the build now fails instead of quietly
+# publishing an empty page.
+force_inspection = true
+# nanobind functions carry no Python signature `inspect` can read, so griffe
+# renders every one of them as `name(*args, **kwargs)` -- 58 signature lines
+# that are not merely uninformative but wrong. nanobind instead puts the real
+# signature, with argument names, types and defaults, on the FIRST LINE of the
+# docstring, so suppressing the rendered one leaves exactly one signature per
+# function and it is the true one from src/ext.cpp. (`separate_signature`,
+# `show_signature_annotations` and `signature_crossrefs` below are kept so this
+# block still matches the other sections' -- see DOCS-THEME.md -- but they have
+# nothing left to act on here.)
+show_signature = false
 docstring_style = "numpy"
 show_source = false
 merge_init_into_class = true
