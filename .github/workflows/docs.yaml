@@ -1,24 +1,99 @@
 name: Docs
+
+# Builds this repo's documentation and publishes it as the /dlpack/ section of
+# the fastfields.github.io Pages site:
+#
+#     /          fastfields.github.io (landing page + shared theme)
+#     /python/   fastfields
+#     /dlpack/   here
+#     /lib/      fastfields-lib
+#     /whl/      whl -- its own project Pages site, independent
+#
+# This used to deploy with actions/deploy-pages to this repo's OWN Pages site,
+# which served a second, diverging copy of these pages at
+# fastfields.github.io/fastfields-dlpack/ while the /dlpack/ path the landing
+# page links -- and every section's menu links -- was a 404. actions/deploy-pages
+# cannot fix that: it only ever deploys to the repo it runs in, and it replaces
+# the whole site, so it cannot express "four repos, one site". Hence the same
+# subtree publish the other two sections use. See DOCS-THEME.md in
+# fastfields/.github.
+
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "fastfields/**", "zensical.toml", ".github/workflows/docs.yaml"]
+    paths:
+      - "docs/**"
+      - "fastfields/**"
+      # The API page is generated from the BUILT extension, whose docstrings
+      # live in src/ext.cpp and whose build is pinned by fastfields-lib.sha, so
+      # both of those change the published page.
+      - "src/**"
+      - "fastfields-lib.sha"
+      - "zensical.toml"
+      - "tools/publish-docs.sh"
+      - "tools/check-docs-nav.py"
+      - ".github/workflows/docs.yaml"
+  # The nav check below gates pull requests too -- that is the point of it, and
+  # a menu that only breaks after merge is the situation this is here to end.
+  # `build-deploy` stays push-only.
+  #
+  # The path list is repeated rather than shared with a YAML anchor: GitHub
+  # Actions does not support anchors or aliases in workflow files.
+  pull_request:
+    paths:
+      - "docs/**"
+      - "fastfields/**"
+      - "src/**"
+      - "fastfields-lib.sha"
+      - "zensical.toml"
+      - "tools/publish-docs.sh"
+      - "tools/check-docs-nav.py"
+      - ".github/workflows/docs.yaml"
   workflow_dispatch:
+
+# Only read: the push into fastfields.github.io is authenticated by the
+# DOCS_DEPLOY_KEY deploy key, not by this workflow's token, and nothing here
+# writes to this repo. The `pages:`/`id-token:` grants the old
+# actions/deploy-pages path needed are gone with it.
 permissions:
   contents: read
-  pages: write
-  id-token: write
-concurrency:
-  group: pages
-  cancel-in-progress: false
+
 jobs:
-  build-deploy:
+  # The top-level documentation menu is duplicated across four repositories --
+  # zensical has no include mechanism -- and it drifted until no two sections
+  # agreed on it. This job is the guard, and it has to run HERE, against THIS
+  # repo's zensical.toml: a check living in only one repo cannot see another
+  # repo's drift. The canonical list is in DOCS-THEME.md in fastfields/.github.
+  #
+  # It is a separate job from build-deploy on purpose: it needs no compiler, no
+  # network fetch and no ~9-minute C++ build, so the menu is checked in seconds
+  # even when the build below is slow or broken.
+  nav:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # --selftest first: it checks the checker against known-good and
+      # known-broken navs, so a check that has quietly stopped failing on
+      # anything cannot pass for a working one.
+      - run: python3 tools/check-docs-nav.py --selftest
+      - run: python3 tools/check-docs-nav.py --check zensical.toml
+
+  build-deploy:
+    needs: nav
+    # The nav check runs on pull requests; publishing does not.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Stops THIS repo racing itself. It is NOT the cross-repo guard: concurrency
+    # groups are per-repository, so they cannot serialize this job against the
+    # publishers in fastfields.github.io / fastfields / fastfields-lib. Those
+    # races are handled by the retry loop in tools/publish-docs.sh.
+    concurrency:
+      group: publish-docs
+      cancel-in-progress: false
+    steps:
       # No submodules and no token: the fastfields-lib C++ tree is pinned by
       # SHA in fastfields-lib.sha and fetched by `pip install .` below. (The
       # dead CI_SUBMODULE_TOKEN that used to be passed here was killing this
@@ -55,8 +130,19 @@ jobs:
           key: ff-lib-build-${{ runner.os }}-${{ hashFiles('fastfields-lib.sha') }}
       - run: pip install .
       - run: zensical build --clean
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-      - uses: actions/deploy-pages@v4
-        id: deployment
+
+      # The wanted path is /dlpack/, which differs from this repo's name, so
+      # actions/deploy-pages cannot produce it: it only ever deploys to the
+      # repo it runs in. The script writes ONLY `dlpack/` and cannot reach the
+      # landing page or the other sections.
+      #
+      # Pushed over SSH as the DOCS_DEPLOY_KEY organization secret: the private
+      # half of a deploy key registered on fastfields.github.io with write
+      # access, scoped to this repo, fastfields and fastfields-lib. The default
+      # GITHUB_TOKEN cannot be used -- it is scoped to the repo it runs in. The
+      # script checks the secret is non-empty before doing any work and fails
+      # with one line naming it if not.
+      - name: Publish the DLPack section into fastfields.github.io
+        env:
+          DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
+        run: ./tools/publish-docs.sh --auth ssh --subdir dlpack --site site

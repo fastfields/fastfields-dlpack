@@ -6,10 +6,10 @@ that work directly on any array — NumPy, PyTorch or CuPy — sharing memory wi
 zero copies.
 
 Most people don't use this package directly. The friendly, array-returning
-wrappers — [`fastfields.numpy`](https://fastfields.github.io/fastfields-numpy/),
-[`fastfields.torch`](https://fastfields.github.io/fastfields-torch/),
-[`fastfields.cupy`](https://fastfields.github.io/fastfields-cupy/) and the
-unified [`fastfields.auto`](https://fastfields.github.io/fastfields/) — are built
+wrappers — [`fastfields.numpy`](https://fastfields.github.io/python/numpy/),
+[`fastfields.torch`](https://fastfields.github.io/python/torch/),
+[`fastfields.cupy`](https://fastfields.github.io/python/cupy/) and the
+unified [`fastfields.auto`](https://fastfields.github.io/python/auto/) — are built
 on top of it and are what you normally want. Reach for `fastfields.dlpack` when
 you want the thinnest possible layer and are happy to manage output buffers
 yourself.
