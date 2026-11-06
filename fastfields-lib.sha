@@ -24,4 +24,4 @@
 #
 # To build against a local working tree instead of this pin, point
 # FASTFIELDS_DIR at it; setup.py then never fetches and never touches it.
-9256d570318a935d34d925b84f326ece509d9284
+19aad48d7d01ab8b74a6f62bb0979a06c4fb0ec8
