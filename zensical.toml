@@ -26,7 +26,6 @@ nav = [
   {"fastfields.numpy" = "https://fastfields.github.io/python/numpy/"},
   {"fastfields.torch" = "https://fastfields.github.io/python/torch/"},
   {"fastfields.cupy" = "https://fastfields.github.io/python/cupy/"},
-  {"fastfields.helpers" = "https://fastfields.github.io/python/helpers/"},
   {"fastfields.dlpack" = [
     "index.md",
     {"CUDA" = "cuda.md"},
