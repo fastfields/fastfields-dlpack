@@ -44,16 +44,20 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
         f"(running {sys.version.split()[0]})."
     )
 
-# The canonical top-level menu: one entry per fastfields namespace, plus
-# Home and the wheel index. The namespace order matches the Packages
-# table on the landing page -- keep the two consistent.
+# The canonical top-level menu: one entry per installable fastfields
+# namespace, plus Home and the wheel index. The namespace order matches
+# the Packages table on the landing page -- keep the two consistent.
+#
+# `fastfields.helpers` is deliberately absent: it ships inside the base
+# distribution and is not installed or imported directly, so it is not a
+# listed namespace. Its pages stay published, nested under
+# `fastfields.auto`.
 CANONICAL_NAV = [
     "Home",
     "fastfields.auto",
     "fastfields.numpy",
     "fastfields.torch",
     "fastfields.cupy",
-    "fastfields.helpers",
     "fastfields.dlpack",
     "libfastfields",
     "Wheel index",
@@ -83,7 +87,7 @@ def nav_labels(nav: object, problems: list[str]) -> list[str]:
         elif isinstance(entry, str):
             # A bare path carries no label, so the menu would render a
             # title derived from the page -- unreviewable, and not one
-            # of the nine.
+            # of the eight.
             problems.append(
                 f"`nav` entry {i} is the bare path {entry!r}; every "
                 "top-level entry must be a labelled table."
@@ -163,7 +167,6 @@ nav = [
   {"fastfields.numpy" = ["numpy.md", "api/numpy.md"]},
   {"fastfields.torch" = "p.md"},
   {"fastfields.cupy" = "p.md"},
-  {"fastfields.helpers" = "p.md"},
   {"fastfields.dlpack" = "https://fastfields.github.io/dlpack/"},
   {"libfastfields" = "https://fastfields.github.io/lib/"},
   {"Wheel index" = "https://fastfields.github.io/whl/"},
@@ -180,8 +183,25 @@ nav = [
             "fastfields.numpy",
             "fastfields.torch",
             "fastfields.cupy",
-            "fastfields.helpers",
             "Raw DLPack binding",
+            "libfastfields",
+            "Wheel index",
+        ),
+        False,
+    ),
+    (
+        # The nine-entry menu this script used to enforce. It is the one
+        # stale nav most likely to turn up in a repo that was not updated,
+        # so it gets a case of its own.
+        "the retired fastfields.helpers entry",
+        _nav(
+            "Home",
+            "fastfields.auto",
+            "fastfields.numpy",
+            "fastfields.torch",
+            "fastfields.cupy",
+            "fastfields.helpers",
+            "fastfields.dlpack",
             "libfastfields",
             "Wheel index",
         ),
@@ -254,11 +274,11 @@ def selftest() -> int:
 
 
 HELP = (
-    "\n  The canonical menu is one entry per fastfields namespace,\n"
-    "  defined in CANONICAL_NAV in this script and documented in\n"
-    "  DOCS-THEME.md in the fastfields/.github repository. All four\n"
-    "  sections must agree, so a change to the menu is a change to\n"
-    "  every publisher repo."
+    "\n  The canonical menu is one entry per installable fastfields\n"
+    "  namespace, defined in CANONICAL_NAV in this script and\n"
+    "  documented in DOCS-THEME.md in the fastfields/.github\n"
+    "  repository. All four sections must agree, so a change to the\n"
+    "  menu is a change to every publisher repo."
 )
 
 
