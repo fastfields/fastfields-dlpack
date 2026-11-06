@@ -24,18 +24,23 @@ on:
     paths:
       - "docs/**"
       - "fastfields/**"
-      # The API page is generated from the BUILT extension, whose docstrings
+      # The API page is rendered from the BUILT extension, whose docstrings
       # live in src/ext.cpp and whose build is pinned by fastfields-lib.sha, so
-      # both of those change the published page.
+      # both of those change the published page. So do the doc toolchain pins:
+      # the page's whole content comes out of mkdocstrings, so a change to
+      # docs/requirements.txt can empty it on its own.
       - "src/**"
       - "fastfields-lib.sha"
       - "zensical.toml"
+      - "docs/requirements.txt"
       - "tools/publish-docs.sh"
       - "tools/check-docs-nav.py"
+      - "tools/check-api-page.py"
       - ".github/workflows/docs.yaml"
-  # The nav check below gates pull requests too -- that is the point of it, and
-  # a menu that only breaks after merge is the situation this is here to end.
-  # `build-deploy` stays push-only.
+  # The checks below gate pull requests too -- that is the point of them, and
+  # a page that only breaks after merge is the situation this is here to end.
+  # `build-deploy` runs on pull requests as well; only its publish step is
+  # push-only.
   #
   # The path list is repeated rather than shared with a YAML anchor: GitHub
   # Actions does not support anchors or aliases in workflow files.
@@ -46,8 +51,10 @@ on:
       - "src/**"
       - "fastfields-lib.sha"
       - "zensical.toml"
+      - "docs/requirements.txt"
       - "tools/publish-docs.sh"
       - "tools/check-docs-nav.py"
+      - "tools/check-api-page.py"
       - ".github/workflows/docs.yaml"
   workflow_dispatch:
 
@@ -83,15 +90,21 @@ jobs:
 
   build-deploy:
     needs: nav
-    # The nav check runs on pull requests; publishing does not.
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # Stops THIS repo racing itself. It is NOT the cross-repo guard: concurrency
-    # groups are per-repository, so they cannot serialize this job against the
-    # publishers in fastfields.github.io / fastfields / fastfields-lib. Those
-    # races are handled by the retry loop in tools/publish-docs.sh.
+    # Stops THIS repo racing itself when publishing. It is NOT the cross-repo
+    # guard: concurrency groups are per-repository, so they cannot serialize
+    # this job against the publishers in fastfields.github.io / fastfields /
+    # fastfields-lib. Those races are handled by the retry loop in
+    # tools/publish-docs.sh.
+    #
+    # A pull-request run builds and checks the site but never publishes, so it
+    # must not sit in the publisher's queue: a few PR builds would otherwise
+    # delay every push to main behind them. Hence a per-ref group for those.
     concurrency:
-      group: publish-docs
+      group: >-
+        ${{ github.event_name == 'pull_request'
+        && format('docs-pr-{0}', github.ref)
+        || 'publish-docs' }}
       cancel-in-progress: false
     steps:
       # No submodules and no token: the fastfields-lib C++ tree is pinned by
@@ -103,19 +116,37 @@ jobs:
         with:
           python-version: "3.x"
       - run: pip install -r docs/requirements.txt
-      # This job needs a real `pip install .`: the API reference is generated
-      # from the *built* extension (fastfields/dlpack/__init__.py is 57
-      # `name = _core.name` aliases and the docstrings live in src/ext.cpp), so
-      # without it the API page comes out with zero function entries.
+      # This job needs a real `pip install .`, and the API reference is why.
+      # docs/api/index.md is a heading plus `::: fastfields.dlpack`, and
+      # fastfields/dlpack/__init__.py is 58 `name = _core.name` aliases whose
+      # docstrings live in src/ext.cpp -- so every function on that page comes
+      # out of the *compiled* extension, and mkdocstrings can only read it by
+      # importing it. That is what `force_inspection = true` in zensical.toml
+      # makes griffe do, and it is why this install is load-bearing: without a
+      # built, importable `fastfields.dlpack._core`, the docs build FAILS.
+      #
+      # Until force_inspection was set, this comment was simply wrong, and had
+      # been for as long as it existed. `paths = ["."]` pointed griffe at the
+      # source tree instead, where `_core`'s attributes are unresolvable; it
+      # emitted nothing for all 58 of them, did not warn, and the page went
+      # live with its module heading, zero functions and an empty objects.inv
+      # -- with this install step running and the build printing `No issues
+      # found`. The install was not doing the job this comment credited it
+      # with. It is now, and the empty-page failure mode is no longer silent:
+      # tools/check-api-page.py below counts the rendered objects and fails the
+      # build before anything is published.
       #
       # That install fetches the pinned fastfields-lib over the network -- the
       # one network dependency in this build. If it ever fails here, setup.py
       # prints the SHA it wanted, the URL, and the FASTFIELDS_DIR recipe for
       # supplying the tree locally; read that message rather than the traceback.
       #
-      # The fetch is ~1s, but the C++ build it triggers is ~9 minutes. That build
-      # is a pure function of the pinned commit and the compiler, so cache it
-      # keyed on exactly that -- hashFiles() over the pin file. (That hashes
+      # The fetch is ~1s, but the C++ build it triggers is ~9 minutes. The
+      # install above is what the API page is rendered from, so that build
+      # cannot be skipped; caching it is the only thing that makes it
+      # affordable, here and on the pull-request runs this job now also does.
+      # The build is a pure function of the pinned commit and the compiler, so
+      # the key is exactly that -- hashFiles() over the pin file. (That hashes
       # its comments too, so editing them discards the cache; over-
       # invalidating is the safe direction.)
       #
@@ -131,6 +162,20 @@ jobs:
       - run: pip install .
       - run: zensical build --clean
 
+      # The guard on the step above. `zensical build` reports `No issues found`
+      # and exits 0 when mkdocstrings renders an API page with nothing on it,
+      # so the build's own exit status says nothing about whether the page has
+      # any content. This counts the objects in the rendered HTML and fails
+      # below a floor -- and it runs BEFORE the publish step, so an empty page
+      # cannot reach fastfields.github.io even once.
+      #
+      # --selftest first, as in the nav job: it checks the checker against the
+      # exact markup of the page that shipped empty and against a healthy one,
+      # so a check that has quietly stopped failing on anything cannot pass
+      # for a working one.
+      - run: python3 tools/check-api-page.py --selftest
+      - run: python3 tools/check-api-page.py --check site/api/index.html
+
       # The wanted path is /dlpack/, which differs from this repo's name, so
       # actions/deploy-pages cannot produce it: it only ever deploys to the
       # repo it runs in. The script writes ONLY `dlpack/` and cannot reach the
@@ -143,6 +188,9 @@ jobs:
       # script checks the secret is non-empty before doing any work and fails
       # with one line naming it if not.
       - name: Publish the DLPack section into fastfields.github.io
+        # The build and the checks above run on pull requests; publishing does
+        # not.
+        if: github.event_name != 'pull_request'
         env:
           DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
         run: ./tools/publish-docs.sh --auth ssh --subdir dlpack --site site
