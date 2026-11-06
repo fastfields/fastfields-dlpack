@@ -31,6 +31,14 @@ on:
       # docs/requirements.txt can empty it on its own.
       - "src/**"
       - "fastfields-lib.sha"
+      # ...and so does how the extension is built. `setup.py` decides the
+      # compile and link of `_core` and `pyproject.toml` its dependencies, so
+      # either can leave the extension unimportable -- which is the exact
+      # failure that empties this page. They were missing from this list,
+      # which is how the abi3/split-mode build change reached a review with
+      # the API-page guard never run.
+      - "setup.py"
+      - "pyproject.toml"
       - "zensical.toml"
       - "docs/requirements.txt"
       - "tools/publish-docs.sh"
@@ -50,6 +58,14 @@ on:
       - "fastfields/**"
       - "src/**"
       - "fastfields-lib.sha"
+      # ...and so does how the extension is built. `setup.py` decides the
+      # compile and link of `_core` and `pyproject.toml` its dependencies, so
+      # either can leave the extension unimportable -- which is the exact
+      # failure that empties this page. They were missing from this list,
+      # which is how the abi3/split-mode build change reached a review with
+      # the API-page guard never run.
+      - "setup.py"
+      - "pyproject.toml"
       - "zensical.toml"
       - "docs/requirements.txt"
       - "tools/publish-docs.sh"

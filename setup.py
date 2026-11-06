@@ -8,7 +8,7 @@ Custom build_ext that:
      -- or, if ``FASTFIELDS_PREBUILT_LIB`` is set, copies them in from there
      instead of invoking ``make`` at all (see ``PREBUILT_LIB_DIR`` below),
   2. copies libfastfields.so + libfastfields-cpu.so into fastfields_bind/lib/,
-  3. compiles the nanobind extension (src/ext.cpp + nb_combined.cpp) against
+  3. compiles the nanobind extension (src/ext.cpp) against
      ./fastfields, linking -lfastfields with an $ORIGIN/lib rpath,
   4. ships the .so libraries as package data.
 
@@ -106,6 +106,57 @@ MAIN_LIB_PATH = os.path.join(FASTFIELDS_BUILD, MAIN_LIB)
 CPU_LIB_PATH = os.path.join(FASTFIELDS_BUILD, "lib", CPU_LIB)
 
 CXX = os.environ.get("CXX", "clang++")
+
+# --------------------------------------------------------------------------
+# nanobind split mode: one abi3 wheel instead of one wheel per CPython
+# --------------------------------------------------------------------------
+# In split mode (nanobind >= 3.1) the extension carries no copy of
+# libnanobind. It is compiled against Python's limited API and obtains
+# nanobind's non-templated core from the separately installed
+# `nanobind-backend` distribution, which the generated PyInit_ imports as
+# `nanobind_backend` before anything else runs (nb_backend_init() in
+# nanobind/nb_backend.h). That indirection is what lets a single binary serve
+# every CPython from the floor upwards -- and it is also why
+# `nanobind-backend` is a *runtime* dependency in pyproject.toml, not a build
+# one: with it absent, importing `_core` raises ImportError.
+#
+# All of that is normally applied by CMake's
+# `nanobind_add_module(... BACKEND_MODULE nanobind_backend)`. This package
+# builds with setuptools and its own compiler invocation (below), so the flags
+# are replicated by hand. Ported from nanobind 3.1.0's
+# cmake/nanobind-config.cmake, where a split-mode target gets, in order:
+#
+#   * STABLE_ABI forced on, with NB_SABI_MIN = "3.10" and no way to go lower
+#     -> -DPy_LIMITED_API=0x030A0000;
+#   * -DNB_BACKEND_MODULE / -DNB_BACKEND_PYPI: the module to import, and the
+#     name quoted in nanobind's own "backend module is not installed" error;
+#   * cxx_std_17, and only two include directories: Python's and nanobind's
+#     (no robin_map -- that is a dependency of nanobind's *sources*, which a
+#     split build does not compile);
+#   * NO nanobind library linked and NO nanobind source compiled. This is the
+#     load-bearing omission: nb_combined.cpp is what a linked build adds to
+#     the extension's sources, and compiling it here would both fail under
+#     Py_LIMITED_API and give the extension the very core the backend exists
+#     to provide;
+#   * -ffunction-sections/-fdata-sections with -Wl,--gc-sections, no stack
+#     protector, hidden visibility, and a stripped link.
+#
+# 3.10 is a hard floor rather than a preference: nb_defs.h #errors out for
+# `Py_LIMITED_API < 0x030A0000` (and for PyPy, and for libc++ on ELF). Linked
+# mode can target the stable ABI too, but only from 3.12 up, which is exactly
+# why split mode is what a 3.10+ wheel needs.
+#
+# Two spellings of the same decision: the Py_LIMITED_API macro value the
+# extension compiles against, and the interpreter tag the wheel is filed
+# under (`...-cp310-abi3-manylinux...whl`). They must agree.
+PY_LIMITED_API_HEX = "0x030A0000"
+ABI3_PYTHON_TAG = "cp310"
+
+# The module nanobind imports at extension init, and the distribution name it
+# tells the user to install when that import fails. Both have to agree with
+# the runtime dependency declared in pyproject.toml.
+NB_BACKEND_MODULE = "nanobind_backend"
+NB_BACKEND_PYPI = "nanobind-backend"
 
 # Opt-in fast path for CI: if set, points at a directory already containing
 # MAIN_LIB/CPU_LIB (built once, out of band -- e.g. the wheel-build workflow's
@@ -321,14 +372,12 @@ def _fetch_failure_message(pinned: str, exc: BaseException) -> str:
 
 
 def _nanobind_paths():
+    # Headers only. A split-mode build compiles none of nanobind's sources,
+    # so neither nb_combined.cpp nor the robin_map headers it needs are part
+    # of this build any more.
     import nanobind
 
-    nb_root = os.path.dirname(nanobind.__file__)
-    return {
-        "include": nanobind.include_dir(),
-        "robin_map": os.path.join(nb_root, "ext", "robin_map", "include"),
-        "combined_src": os.path.join(nb_root, "src", "nb_combined.cpp"),
-    }
+    return {"include": nanobind.include_dir()}
 
 
 class BuildExt(build_ext):
@@ -426,19 +475,48 @@ class BuildExt(build_ext):
 
         include_dirs = [
             nb["include"],
-            nb["robin_map"],
             sysconfig.get_path("include"),
             FASTFIELDS_INCLUDE,
         ]
-        sources = list(ext.sources) + [nb["combined_src"]]
+        # Exactly the extension's own sources: no nb_combined.cpp. See the
+        # split-mode note at the top of this file -- compiling nanobind's core
+        # in here is the one thing that would quietly undo the arrangement.
+        sources = list(ext.sources)
 
         ext_path = self.get_ext_fullpath(ext.name)
         os.makedirs(os.path.dirname(ext_path), exist_ok=True)
 
         cmd = [CXX, "-std=c++17", "-O2", "-shared", "-fvisibility=hidden"]
+        # The three defines that make this a split-mode, stable-ABI build.
+        # Py_LIMITED_API both restricts the extension to the subset of the
+        # C API that is ABI-stable from 3.10 on and selects nanobind's
+        # limited-API code paths; NB_BACKEND_MODULE is what turns on split
+        # mode at all (nb_defs.h #errors if it is set without
+        # Py_LIMITED_API), and NB_BACKEND_PYPI only names the distribution in
+        # the error nanobind raises when the backend is missing. Passed as
+        # bare tokens, not quoted strings: nanobind stringifies them itself
+        # with NB_TOSTRING.
+        cmd += [
+            f"-DPy_LIMITED_API={PY_LIMITED_API_HEX}",
+            f"-DNB_BACKEND_MODULE={NB_BACKEND_MODULE}",
+            f"-DNB_BACKEND_PYPI={NB_BACKEND_PYPI}",
+        ]
         # Position-independent code is POSIX-only (default on Windows PE/COFF).
         if sys.platform != "win32":
             cmd.append("-fPIC")
+        # Size, as nanobind's own split-mode target is built: per-function and
+        # per-data sections so the linker can drop what the single translation
+        # unit does not reach, and no stack protector. Unlike nanobind we keep
+        # -O2 rather than -Os -- this extension is the hot path into the C++
+        # library and has never been built for size.
+        if sys.platform not in ("win32", "darwin"):
+            cmd += [
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-Wl,--gc-sections",
+            ]
+        if sys.platform != "win32":
+            cmd.append("-fno-stack-protector")
         # A CPython extension resolves the interpreter's C-API symbols (_Py*)
         # at load time, so they must be left undefined in the module. ELF
         # permits undefined symbols in a shared object by default; Mach-O does
@@ -458,6 +536,13 @@ class BuildExt(build_ext):
             cmd += ["-L", FASTFIELDS_BUILD, "-lfastfields"]
         if RPATH_FLAG:
             cmd += [RPATH_FLAG]
+        # Strip the local symbol table from the shipped binary (nanobind's
+        # NOSTRIP default). .dynsym survives, so the extension still resolves
+        # the stable-ABI Py* imports and `nm -D` still reports them.
+        if sys.platform == "darwin":
+            cmd += ["-Wl,-dead_strip", "-Wl,-x", "-Wl,-S"]
+        elif sys.platform != "win32":
+            cmd += ["-Wl,-s"]
         cmd += ["-o", ext_path]
         print("[fastfields_bind] " + " ".join(cmd))
         subprocess.check_call(cmd)
@@ -477,10 +562,23 @@ ext_modules = [
     Extension(
         "fastfields.dlpack._core",
         sources=[os.path.join("src", "ext.cpp")],
+        # Names the built file `_core.abi3.so` instead of
+        # `_core.cpython-312-x86_64-linux-gnu.so`, via setuptools'
+        # get_ext_filename. It does NOT add -DPy_LIMITED_API (build_extension
+        # above does) and it does NOT tag the wheel -- that is the bdist_wheel
+        # option below, and the two are easy to confuse.
+        py_limited_api=True,
     )
 ]
 
 setup(
     cmdclass={"build_ext": BuildExt},
     ext_modules=ext_modules,
+    # The wheel's interpreter/ABI tags. setuptools derives `cp310-abi3` from
+    # this bdist_wheel option alone; `py_limited_api=True` on the Extension
+    # has no say in it, so without this a correctly-built abi3 extension would
+    # still ship in a `cp312-cp312` wheel that pip refuses to install on any
+    # other version. Set here rather than in a setup.cfg so it sits beside
+    # the Py_LIMITED_API value it has to agree with.
+    options={"bdist_wheel": {"py_limited_api": ABI3_PYTHON_TAG}},
 )

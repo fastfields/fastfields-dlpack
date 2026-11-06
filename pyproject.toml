@@ -1,12 +1,19 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "nanobind>=1.9", "numpy", "versioningit>=3"]
+# nanobind >= 3.1 for split mode: `NB_BACKEND_MODULE` and the
+# `nanobind-backend` distribution it imports do not exist before it, and
+# an older nanobind would compile a linked extension that is not abi3.
+requires = ["setuptools>=64", "wheel", "nanobind>=3.1", "numpy", "versioningit>=3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastfields-dlpack"
 description = "nanobind bindings from DLPack to the fastfields-lib C++ library (fastfields.dlpack)"
 readme = "README.md"
-requires-python = ">=3.9"
+# 3.10 is nanobind's limited-API floor, not a policy choice: nb_defs.h
+# #errors for `Py_LIMITED_API < 0x030A0000`. One `cp310-abi3` wheel then
+# covers every CPython from here up, so this floor is also the only
+# Python version the release matrix builds on.
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Yaël Balbastre", email = "yael.bx@gmail.com" }]
 maintainers = [{ name = "Yaël Balbastre", email = "yael.bx@gmail.com" }]
@@ -17,10 +24,10 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
@@ -30,6 +37,13 @@ dependencies = [
     # `packaging` parses __version__ to expose the compute backend as
     # `fastfields.dlpack.backend` (see fastfields/dlpack/__init__.py).
     "packaging",
+    # A RUNTIME dependency, not a build one, and the price of the single abi3
+    # wheel. `_core` is built in nanobind's split mode: it carries no copy of
+    # libnanobind and imports `nanobind_backend` from this distribution during
+    # PyInit__core, so without it the extension does not import at all.
+    # `nanobind` itself stays in [build-system].requires -- only its headers
+    # are needed to compile. See the split-mode block in setup.py.
+    "nanobind-backend",
 ]
 
 [project.optional-dependencies]
@@ -59,7 +73,6 @@ quote-style = "preserve"
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "W"]
 ignore = [
-    "B905",   # zip(strict=...) requires Python >= 3.10
     "B007",   # allow unused loop variables
     "E731",   # allow assigning lambdas to variables
 ]
