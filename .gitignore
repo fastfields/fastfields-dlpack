@@ -25,3 +25,6 @@ dist/
 
 # versioningit-generated version file
 /fastfields/dlpack/_version.py
+
+# zensical build output
+site/

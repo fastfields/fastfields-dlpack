@@ -1,16 +1,39 @@
 [project]
-site_name = "fastfields-dlpack"
+site_name = "fastfields"
 site_description = "nanobind bindings from DLPack to the fastfields-lib C++ library (fastfields.dlpack)"
 site_author = "Yaël Balbastre"
-site_url = "https://fastfields.github.io/fastfields-dlpack/"
+site_url = "https://fastfields.github.io/dlpack/"
 repo_url = "https://github.com/fastfields/fastfields-dlpack"
 repo_name = "fastfields/fastfields-dlpack"
 copyright = "Copyright &copy; 2026 The fastfields authors"
+# The shared theme. Served by the fastfields.github.io repo, referenced by
+# absolute URL so the four sections look alike from one source -- and so no
+# docs build has to fetch another repository.
+extra_css = ["https://fastfields.github.io/stylesheets/extra.css"]
+# The canonical fastfields menu: one entry per fastfields namespace, plus Home
+# and the wheel index. The nine top-level entries, these labels and this order
+# are identical in all four sections (see DOCS-THEME.md in the fastfields/.github
+# repo) and tools/check-docs-nav.py fails the build if they drift. A section
+# expands the entries it owns into its own pages and links the rest absolutely:
+# a relative target keeps in-site navigation native (active-page highlight, no
+# full page reload), an absolute one crosses to another section's site.
+#
+# `index.md` leads the group, so `navigation.indexes` makes the
+# `fastfields.dlpack` entry itself land on this section's own description.
 nav = [
-  {"fastfields home" = "https://fastfields.github.io/"},
-  {"Home" = "index.md"},
-  {"CUDA" = "cuda.md"},
-  {"API" = "api/index.md"},
+  {"Home" = "https://fastfields.github.io/"},
+  {"fastfields.auto" = "https://fastfields.github.io/python/auto/"},
+  {"fastfields.numpy" = "https://fastfields.github.io/python/numpy/"},
+  {"fastfields.torch" = "https://fastfields.github.io/python/torch/"},
+  {"fastfields.cupy" = "https://fastfields.github.io/python/cupy/"},
+  {"fastfields.helpers" = "https://fastfields.github.io/python/helpers/"},
+  {"fastfields.dlpack" = [
+    "index.md",
+    {"CUDA" = "cuda.md"},
+    {"API reference" = "api/index.md"},
+  ]},
+  {"libfastfields" = "https://fastfields.github.io/lib/"},
+  {"Wheel index" = "https://fastfields.github.io/whl/"},
 ]
 [project.theme]
 language = "en"
@@ -24,7 +47,7 @@ scheme = "slate"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to light mode"
 [project.theme.icon]
-logo = "material/waves"
+logo = "fontawesome/solid/spiral"
 repo = "fontawesome/brands/github"
 [project.plugins.mkdocstrings.handlers.python]
 inventories = [
