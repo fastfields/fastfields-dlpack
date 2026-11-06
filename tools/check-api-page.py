@@ -63,13 +63,14 @@ DEFAULT_PAGE = os.path.join("site", "api", "index.html")
 #:
 #: `src/ext.cpp` binds 58 functions and
 #: `fastfields/dlpack/__init__.py` re-exports all 58, so a healthy page
-#: renders the module plus one entry per function: 59 objects. The floor
-#: is set at 50 -- comfortably under that, so deliberately privatising
-#: or dropping a handful of ops is a code review rather than an edit to
-#: this script, and far above the single-digit range that means the
-#: handler stopped resolving `_core` at all. The failure this exists to
-#: catch took the page from 59 to 1; it is not a near-miss, and the
-#: floor does not need to be tight to catch it.
+#: renders the module, one entry per function, and `__version__`: 60
+#: objects, as measured. The floor is set at 50 -- comfortably under
+#: that, so deliberately privatising or dropping a handful of ops is a
+#: code review rather than an edit to this script, and far above the
+#: single-digit range that means the handler stopped resolving `_core`
+#: at all. The failure this exists to catch took the page from 60 to 1;
+#: it is not a near-miss, and the floor does not need to be tight to
+#: catch it.
 #:
 #: Raise it if the binding grows a lot. Do NOT lower it to make a red
 #: check go green -- a drop of that size is the renderer breaking, not
@@ -159,8 +160,12 @@ SELFTEST_CASES = [
         False,
     ),
     (
-        "the real binding size: module + 58 functions",
-        "<html>" + _MODULE + _FUNC * 58 + "</html>",
+        "the real page: module + 58 functions + __version__",
+        "<html>"
+        + _MODULE
+        + _FUNC * 58
+        + '<div class="doc doc-object doc-attribute">'
+        + "</html>",
         True,
     ),
     # `doc-object-name` is the signature's <code>, not an object. A guard
