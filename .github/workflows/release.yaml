@@ -22,7 +22,7 @@
 #     actions/checkout is gone from python-release.yml). `secrets: inherit`
 #     below must stay: the publish and wheel-index steps need GITHUB_TOKEN
 #     and WHL_DISPATCH_TOKEN.
-#   * Platforms: Linux x86_64 (manylinux_2_28), macOS arm64 (macos-15) and
+#   * Platforms: Linux x86_64 (manylinux_2_28), macOS arm64 (macos-26) and
 #     x86_64 (macos-15-intel) as separate per-arch wheels -- each built on a
 #     runner of its own architecture, with the arch passed to the C++ build
 #     and checked by lipo and delocate --require-archs -- and Windows x64
@@ -63,5 +63,5 @@ jobs:
       tag: ${{ github.event.release.tag_name || inputs.tag }}
       compiled: true
       backend: ${{ inputs.backend || 'cpu' }}
-      runners: '["ubuntu-latest", "macos-15", "macos-15-intel", "windows-latest"]'
+      runners: '["ubuntu-latest", "macos-26", "macos-15-intel", "windows-latest"]'
     secrets: inherit
