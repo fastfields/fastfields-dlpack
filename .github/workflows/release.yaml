@@ -12,26 +12,27 @@
 # All the logic lives in the org-level reusable workflow so the five package
 # repos stay identical; see fastfields/.github for the full contract.
 #
-# STATUS -- what this does NOT do yet:
+# STATUS:
 #   * Only the `cpu` backend is built. The `cuXXX` lanes need the CUDA build of
 #     fastfields-lib (FF_WITH_CUDA: the lib linking libfastfields-cuda, and
 #     setup.py bundling it), which is MIGRATION.md task T21. The wheel index
 #     already advertises those folders as "planned -- not yet published".
-#   * BLOCKED on a change to the shared workflow. `_fastfields_lib` is no
-#     longer a submodule (it is pinned by SHA in `fastfields-lib.sha` and
-#     fetched by setup.py), but `python-release.yml`'s `build-native` and
-#     `build-compiled` jobs still check out with `submodules: recursive` and
-#     `token: ${{ secrets.CI_SUBMODULE_TOKEN }}`. That PAT is stale, so both
-#     jobs die in `actions/checkout` on the main repo before any build step --
-#     the same failure that was turning Test and Docs red. Both inputs are now
-#     dead weight and need removing there; `secrets: inherit` below must stay,
-#     because the publish and wheel-index steps do need GITHUB_TOKEN and
-#     WHL_DISPATCH_TOKEN. Nothing in this repo can fix it.
-#   * Linux only. The C++ build uses clang-style Unix Makefiles that are not
-#     Windows-portable (fastfields-dlpack#8), and the macOS leg needs
-#     cross-arch work before an arm64 wheel can be trusted -- plain `make`
-#     ignores cibuildwheel's target arch, so a macOS matrix entry would happily
-#     emit a mislabelled wheel. Widen `runners` once those are addressed.
+#   * The shared workflow's checkout no longer passes a submodule token (the
+#     stale CI_SUBMODULE_TOKEN that killed `build-native`/`build-compiled` in
+#     actions/checkout is gone from python-release.yml). `secrets: inherit`
+#     below must stay: the publish and wheel-index steps need GITHUB_TOKEN
+#     and WHL_DISPATCH_TOKEN.
+#   * Platforms: Linux x86_64 (manylinux_2_28), macOS arm64 (macos-14) and
+#     x86_64 (macos-15-intel) as separate per-arch wheels -- each built on a
+#     runner of its own architecture, with the arch passed to the C++ build
+#     and checked by lipo and delocate --require-archs -- and Windows x64
+#     (clang++ against the MSVC runtime; the DLLs export via FF_API /
+#     FF_CPU_API and the extension links their import libraries,
+#     fastfields-dlpack#8). CUDA stays Linux-only. The Windows wheel relies
+#     on the system MSVC C++ runtime (msvcp140.dll), as most C++ wheels do.
+#   * `wheels.yaml` runs these same jobs on pull requests as a dry run
+#     (`publish: false`, artifacts only), so a platform that stops building
+#     is caught before a tag is cut. Keep its runner list equal to this one.
 
 name: Release
 
@@ -62,5 +63,5 @@ jobs:
       tag: ${{ github.event.release.tag_name || inputs.tag }}
       compiled: true
       backend: ${{ inputs.backend || 'cpu' }}
-      runners: '["ubuntu-latest"]'
+      runners: '["ubuntu-latest", "macos-14", "macos-15-intel", "windows-latest"]'
     secrets: inherit

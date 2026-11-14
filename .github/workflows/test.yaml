@@ -23,4 +23,25 @@ jobs:
     # workflow's `repo == dlpack && secrets.CI_SUBMODULE_TOKEN || github.token`
     # expression sees an empty (falsy) secret and falls back to github.token.
     # python-test.yml requires no secrets of its own.
-    uses: fastfields/.github/.github/workflows/python-test.yml@main
+    uses: fastfields/.github/.github/workflows/python-test.yml@claude/feat/portable-wheels-macos-windows
+    # The shared workflow's default (Linux-only) matrix, plus one macOS arm64
+    # and one Windows x64 leg. Each leg builds this package from source --
+    # fastfields-lib's Makefile included -- with the runner's own toolchain,
+    # so these two are the proof that the bindings build, load and pass on
+    # those platforms, not only that a wheel can be assembled there (that is
+    # wheels.yaml's job). One Python each: the extension is abi3, so the
+    # interpreter version does not change what is compiled.
+    #
+    # TEMPORARY REF: `@claude/feat/portable-wheels-macos-windows` carries the
+    # python-test.yml fix the Windows leg needs (a quoted $GITHUB_WORKSPACE
+    # for pytest). Re-point this at `@main` once fastfields/.github merges it.
+    with:
+      matrix-include: >-
+        [
+          {"os": "ubuntu-22.04", "python": "3.10"},
+          {"os": "ubuntu-24.04", "python": "3.11"},
+          {"os": "ubuntu-26.04", "python": "3.12"},
+          {"os": "ubuntu-latest", "python": "3.13"},
+          {"os": "macos-latest", "python": "3.12"},
+          {"os": "windows-latest", "python": "3.12"}
+        ]
