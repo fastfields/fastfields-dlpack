@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -104,6 +105,13 @@ MAIN_LIB = "libfastfields." + LIBEXT
 CPU_LIB = "libfastfields-cpu." + LIBEXT
 MAIN_LIB_PATH = os.path.join(FASTFIELDS_BUILD, MAIN_LIB)
 CPU_LIB_PATH = os.path.join(FASTFIELDS_BUILD, "lib", CPU_LIB)
+
+# Windows only: the import library the Makefile writes beside each DLL. A
+# PE/COFF linker cannot link against a .dll, so the extension links
+# libfastfields.lib; the DLL itself is what ships and loads. Only the hub's is
+# needed here -- the extension calls nothing in libfastfields-cpu directly.
+MAIN_IMPLIB = "libfastfields.lib"
+MAIN_IMPLIB_PATH = os.path.join(FASTFIELDS_BUILD, MAIN_IMPLIB)
 
 CXX = os.environ.get("CXX", "clang++")
 
@@ -164,7 +172,22 @@ NB_BACKEND_PYPI = "nanobind-backend"
 # instead of each of them re-running `make`). When unset, behaviour is exactly
 # the from-source build below, so local/dev installs and this repo's own
 # non-release test CI are unaffected.
+#
+# A relative path is taken relative to this file's directory, not the cwd:
+# that is how the release workflow names it on macOS and Windows, where
+# cibuildwheel builds on the host and the checkout's absolute path is neither
+# known in advance nor (with Windows backslashes) safe to quote through its
+# environment syntax.
 PREBUILT_LIB_DIR = os.environ.get("FASTFIELDS_PREBUILT_LIB")
+if PREBUILT_LIB_DIR and not os.path.isabs(PREBUILT_LIB_DIR):
+    PREBUILT_LIB_DIR = os.path.join(HERE, PREBUILT_LIB_DIR)
+
+# macOS: the target architecture(s), e.g. "-arch arm64". cibuildwheel exports
+# ARCHFLAGS for every macOS build; the fastfields-lib Makefile reads the same
+# variable from the environment, so the libraries and the extension are built
+# for the same architecture as the wheel is tagged for, instead of for
+# whatever the compiler's default happens to be.
+ARCHFLAGS = shlex.split(os.environ.get("ARCHFLAGS", ""))
 
 _SHA_RE = re.compile(r"\A[0-9a-f]{40}\Z")
 
@@ -371,6 +394,18 @@ def _fetch_failure_message(pinned: str, exc: BaseException) -> str:
     )
 
 
+def _required_lib_paths() -> list[str]:
+    """Every file under ``FASTFIELDS_BUILD`` this build needs to exist.
+
+    The two shared libraries everywhere, plus the hub's import library on
+    Windows -- which is what the extension actually links.
+    """
+    paths = [MAIN_LIB_PATH, CPU_LIB_PATH]
+    if sys.platform == "win32":
+        paths.append(MAIN_IMPLIB_PATH)
+    return paths
+
+
 def _nanobind_paths():
     # Headers only. A split-mode build compiles none of nanobind's sources,
     # so neither nb_combined.cpp nor the robin_map headers it needs are part
@@ -415,7 +450,7 @@ class BuildExt(build_ext):
 
     # -- step 1: build the C++ libraries if they are not there yet -----------
     def _ensure_fastfields_libs(self):
-        if os.path.exists(MAIN_LIB_PATH) and os.path.exists(CPU_LIB_PATH):
+        if all(os.path.exists(p) for p in _required_lib_paths()):
             return
         if PREBUILT_LIB_DIR:
             self._use_prebuilt_libs()
@@ -425,11 +460,11 @@ class BuildExt(build_ext):
         # `.DEFAULT_GOAL := all`, and a bare `make` is what builds both the
         # hub and the CPU backend.
         subprocess.check_call(["make", "-C", FASTFIELDS_DIR, f"CXX={CXX}"])
-        if not (
-            os.path.exists(MAIN_LIB_PATH) and os.path.exists(CPU_LIB_PATH)
-        ):
+        missing = [p for p in _required_lib_paths() if not os.path.exists(p)]
+        if missing:
             raise RuntimeError(
-                "fastfields-lib build did not produce the expected .so files"
+                "fastfields-lib build did not produce the expected shared "
+                f"libraries: missing {missing}"
             )
 
     # -- step 1b: or copy them in from a pre-built directory (CI fast path) --
@@ -440,7 +475,8 @@ class BuildExt(build_ext):
         )
         os.makedirs(os.path.dirname(MAIN_LIB_PATH), exist_ok=True)
         os.makedirs(os.path.dirname(CPU_LIB_PATH), exist_ok=True)
-        for name, dst in ((MAIN_LIB, MAIN_LIB_PATH), (CPU_LIB, CPU_LIB_PATH)):
+        for dst in _required_lib_paths():
+            name = os.path.basename(dst)
             src = os.path.join(PREBUILT_LIB_DIR, name)
             if not os.path.exists(src):
                 raise RuntimeError(
@@ -486,7 +522,25 @@ class BuildExt(build_ext):
         ext_path = self.get_ext_fullpath(ext.name)
         os.makedirs(os.path.dirname(ext_path), exist_ok=True)
 
-        cmd = [CXX, "-std=c++17", "-O2", "-shared", "-fvisibility=hidden"]
+        cmd = [CXX, "-std=c++17", "-O2", "-shared"]
+        # Hidden by default, so the module exports only PyInit__core. A
+        # PE/COFF DLL already exports nothing that is not dllexport'ed, and
+        # the flag means nothing there.
+        if sys.platform != "win32":
+            cmd.append("-fvisibility=hidden")
+        # Same architecture as the fastfields-lib libraries (see ARCHFLAGS).
+        if sys.platform == "darwin":
+            cmd += ARCHFLAGS
+        # The DLL C/C++ runtime (cl's /MD, which defines _DLL), as CPython and
+        # fastfields-lib's DLLs use. clang++'s GNU-style driver otherwise
+        # picks the static one, and nanobind encodes the runtime in its ABI
+        # tag: the extension then refuses to load against nanobind_backend
+        # ("built for ... nanobind_msvc_none ... backend serves ..._md").
+        # The driver still hands the linker its own `-defaultlib:libcmt`
+        # (the static CRT) whatever the objects asked for; drop it, or both
+        # runtimes are linked and the DLL one's __imp_ symbols go unresolved.
+        if sys.platform == "win32":
+            cmd += ["-fms-runtime-lib=dll", "-Wl,-nodefaultlib:libcmt"]
         # The three defines that make this a split-mode, stable-ABI build.
         # Py_LIMITED_API both restricts the extension to the subset of the
         # C API that is ABI-stable from 3.10 on and selects nanobind's
@@ -528,10 +582,17 @@ class BuildExt(build_ext):
             cmd += ["-I", inc]
         cmd += sources
         if sys.platform == "win32":
-            # No import library is produced for libfastfields.dll, so link the
-            # extension directly against the DLL by path; the DLL is then
-            # located at import time via os.add_dll_directory.
-            cmd += [MAIN_LIB_PATH]
+            # The hub's import library, by path (the MSVC-target driver would
+            # turn `-lfastfields` into `fastfields.lib`, without the `lib`
+            # prefix). The DLL is found at import time through the directory
+            # fastfields/dlpack/__init__.py adds with os.add_dll_directory.
+            #
+            # Python's own import library: pyconfig.h names it with a
+            # `#pragma comment(lib, "python3.lib")` under Py_LIMITED_API, and
+            # it lives in <base_prefix>/libs -- which is not on the linker's
+            # default search path.
+            py_libs = os.path.join(sys.base_prefix, "libs")
+            cmd += [MAIN_IMPLIB_PATH, "-L", py_libs]
         else:
             cmd += ["-L", FASTFIELDS_BUILD, "-lfastfields"]
         if RPATH_FLAG:
@@ -546,6 +607,14 @@ class BuildExt(build_ext):
         cmd += ["-o", ext_path]
         print("[fastfields_bind] " + " ".join(cmd))
         subprocess.check_call(cmd)
+        if sys.platform == "win32":
+            # Linking a DLL also writes its own import library and export
+            # file beside it. Nothing links against the extension, and they
+            # would otherwise be swept into the wheel next to _core.pyd.
+            stem = os.path.splitext(ext_path)[0]
+            for leftover in (stem + ".lib", stem + ".exp"):
+                if os.path.exists(leftover):
+                    os.remove(leftover)
 
         # Ensure the libs sit next to the freshly-built extension too (covers
         # both in-place/editable builds and staged wheel builds).

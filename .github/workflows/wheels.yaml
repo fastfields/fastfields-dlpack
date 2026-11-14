@@ -1,0 +1,59 @@
+name: Wheels
+
+# Builds every release wheel -- Linux x86_64, macOS arm64, macOS x86_64,
+# Windows x64 -- through the SAME reusable workflow, jobs and cibuildwheel
+# configuration a release uses, but as a dry run: `publish: false` skips the
+# version assertion, the upload onto a GitHub Release and the wheel-index
+# ping, and leaves the wheels as workflow artifacts (`dist-cpu-<runner>`).
+# Nothing is tagged, released or published from here.
+#
+# It exists because the release workflow is otherwise only ever exercised by
+# an actual release: a platform that stopped building would first be noticed
+# with a tag already cut. Run on pull requests that touch what goes into a
+# wheel, and on demand.
+#
+# `tag` is the commit being tested -- on a dry run it is only the checkout
+# ref -- so the wheels' versions are versioningit's untagged form (e.g.
+# `0.1.post12+cpu.g<sha>`), which is expected and is exactly what `publish`
+# would refuse.
+#
+# The runner list must match release.yaml's.
+
+on:
+  pull_request:
+    paths:
+      - "setup.py"
+      - "pyproject.toml"
+      - "_versioning.py"
+      - "MANIFEST.in"
+      - "src/**"
+      - "fastfields/**"
+      - "fastfields-lib.sha"
+      - ".github/workflows/wheels.yaml"
+      - ".github/workflows/release.yaml"
+  workflow_dispatch:
+
+# `contents: write` is not used for anything here. It is required because
+# GitHub validates a called workflow's job permissions statically, and the
+# reusable workflow's `publish` job -- skipped on a dry run -- declares it.
+permissions:
+  contents: write
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheels:
+    # TEMPORARY REF: the dry-run (`publish`) input and the macOS/Windows legs
+    # live on fastfields/.github's `claude/feat/portable-wheels-macos-windows`
+    # branch until it merges. Re-point this (and release.yaml, which has no
+    # such need) at `@main` then.
+    uses: fastfields/.github/.github/workflows/python-release.yml@claude/feat/portable-wheels-macos-windows
+    with:
+      tag: ${{ github.event.pull_request.head.sha || github.sha }}
+      compiled: true
+      backend: cpu
+      runners: '["ubuntu-latest", "macos-26", "macos-15-intel", "windows-latest"]'
+      publish: false
+      dispatch-index: false

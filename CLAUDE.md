@@ -53,7 +53,9 @@ builds `libfastfields.so` + `libfastfields-cpu.so` via its Makefile **if
 missing** (bare `make`, relying on that Makefile's `.DEFAULT_GOAL := all`),
 copies them into
 `fastfields/dlpack/lib/`, and compiles the nanobind extension against them with
-an `$ORIGIN/lib` rpath. It respects `CXX` (default `clang++`); the extension is
+an `$ORIGIN/lib` (`@loader_path/lib` on macOS) rpath -- on Windows it links
+the hub's import library `libfastfields.lib` and the DLLs are found via
+`os.add_dll_directory`. It respects `CXX` (default `clang++`); the extension is
 built `-std=c++17` even though the C++ libs are C++11.
 
 ## Conventions & caveats
