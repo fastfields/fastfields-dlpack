@@ -531,6 +531,13 @@ class BuildExt(build_ext):
         # Same architecture as the fastfields-lib libraries (see ARCHFLAGS).
         if sys.platform == "darwin":
             cmd += ARCHFLAGS
+        # The DLL C/C++ runtime (cl's /MD, which defines _DLL), as CPython and
+        # fastfields-lib's DLLs use. clang++'s GNU-style driver otherwise
+        # picks the static one, and nanobind encodes the runtime in its ABI
+        # tag: the extension then refuses to load against nanobind_backend
+        # ("built for ... nanobind_msvc_none ... backend serves ..._md").
+        if sys.platform == "win32":
+            cmd.append("-fms-runtime-lib=dll")
         # The three defines that make this a split-mode, stable-ABI build.
         # Py_LIMITED_API both restricts the extension to the subset of the
         # C API that is ABI-stable from 3.10 on and selects nanobind's
