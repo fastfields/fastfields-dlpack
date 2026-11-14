@@ -536,8 +536,11 @@ class BuildExt(build_ext):
         # picks the static one, and nanobind encodes the runtime in its ABI
         # tag: the extension then refuses to load against nanobind_backend
         # ("built for ... nanobind_msvc_none ... backend serves ..._md").
+        # The driver still hands the linker its own `-defaultlib:libcmt`
+        # (the static CRT) whatever the objects asked for; drop it, or both
+        # runtimes are linked and the DLL one's __imp_ symbols go unresolved.
         if sys.platform == "win32":
-            cmd.append("-fms-runtime-lib=dll")
+            cmd += ["-fms-runtime-lib=dll", "-Wl,-nodefaultlib:libcmt"]
         # The three defines that make this a split-mode, stable-ABI build.
         # Py_LIMITED_API both restricts the extension to the subset of the
         # C API that is ABI-stable from 3.10 on and selects nanobind's
