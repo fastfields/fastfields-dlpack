@@ -1,0 +1,30 @@
+name: macOS build timing (scratch)
+on:
+  push:
+    branches: [claude/feat/macos-build-timing]
+permissions:
+  contents: read
+jobs:
+  t:
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [plain, mdt, arch, both]
+    runs-on: macos-15
+    steps:
+      - run: |
+          git init -q lib && cd lib
+          git remote add origin https://github.com/fastfields/fastfields-lib.git
+          git fetch -q --depth 1 origin 59b8ff9b76d3f452d53ad2cda22e7677b5f14011
+          git checkout -q FETCH_HEAD
+      - run: |
+          cd lib/src/lib-cpu
+          case "${{ matrix.case }}" in
+            mdt) export MACOSX_DEPLOYMENT_TARGET=11.0 ;;
+            arch) A="-arch arm64" ;;
+            both) export MACOSX_DEPLOYMENT_TARGET=11.0; A="-arch arm64" ;;
+          esac
+          sysctl -n hw.ncpu hw.memsize machdep.cpu.brand_string || true
+          for m in distance splinc; do
+            /usr/bin/time -l clang++ -std=c++11 -O3 $A -DFF_INDEX32=1 -DFF_BUILDING_CPU_LIB -I../../include -fPIC -c -o /tmp/$m.o $m.cpp 2>&1 | grep -E "real|maximum resident" 
+          done
