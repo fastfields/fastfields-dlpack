@@ -197,7 +197,10 @@ def hub_api(lib_dir: str) -> dict[str, str]:
         src = re.sub(r"//.*", "", src)
         # Every hub entry point is a file-scope `void <name>(`; the
         # templated helpers live in core/ and the backend api/{cpu,cuda}/.
-        for op in re.findall(r"(?m)^void\s+(\w+)\s*\(", src):
+        # Since fastfields-lib#172 each is prefixed with the FF_API export
+        # macro (core/export.h: dllexport/dllimport on Windows), which is
+        # accepted but not required so older pins still parse.
+        for op in re.findall(r"(?m)^(?:FF_API\s+)?void\s+(\w+)\s*\(", src):
             api[op] = name
     return api
 

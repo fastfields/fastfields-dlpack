@@ -54,6 +54,6 @@ jobs:
       tag: ${{ github.event.pull_request.head.sha || github.sha }}
       compiled: true
       backend: cpu
-      runners: '["ubuntu-latest", "macos-14", "macos-15-intel", "windows-latest"]'
+      runners: '["ubuntu-latest", "macos-15", "macos-15-intel", "windows-latest"]'
       publish: false
       dispatch-index: false
